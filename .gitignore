@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# ShieldNet Specific
+logs/
+temp/
+uploads/temp/
+quarantine/
+backend/db/shieldnet.db
+backend/db/shieldnet.db-journal
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+data/
+models/
+*.csv
+*.pcap
+*.pkl
+*.joblib
+*.h5
+*.pt
+*.pth__pycache__
