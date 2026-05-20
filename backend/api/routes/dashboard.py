@@ -22,6 +22,26 @@ from backend.db.repositories.correlation_repository import CorrelationRepository
 router = APIRouter(tags=["Dashboard"])
 
 
+@router.get("/system/health")
+async def system_health(db: Session = Depends(get_db)):
+    from backend.services.steg.cnn.cnn_classifier import _MODEL_LOADED
+    try:
+        from sqlalchemy import text
+        db.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        db_ok = False
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "database": "connected" if db_ok else "error",
+        "ml_model_xgboost": "loaded",
+        "ml_model_cnn": "loaded" if _MODEL_LOADED else "fallback_statistical",
+        "honeypot": "running",
+        "websocket": "running",
+        "proxy": "check_mitmproxy",
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
 @router.get("/health")
 def health():
     return {

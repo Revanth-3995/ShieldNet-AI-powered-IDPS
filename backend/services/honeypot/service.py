@@ -1,176 +1,219 @@
 """
 ShieldNet — Honeypot Engine
-Simulates vulnerable network services to trap and log attackers.
+Simulates SSH, HTTP, FTP, Telnet services. Logs all interactions to DB.
 """
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 import time
-from typing import Optional
+from datetime import datetime, timezone
 
-import requests
-
-from backend.core.logging import get_logger
 from backend.core.config import settings
+from backend.core.logging import get_logger
+from backend.db.database import SessionLocal
+from backend.db import models
 
 logger = get_logger("shieldnet.honeypot")
 
-MITRE_TTPS = {
-    "ssh": {"credential_attempt": "T1110 - Brute Force", "command_exec": "T1059 - Command and Scripting Interpreter"},
-    "http": {"sql_injection": "T1190 - Exploit Public-Facing Application", "default": "T1046 - Network Service Discovery"},
-    "ftp": {"credential": "T1110 - Brute Force"},
-    "telnet": {"command_exec": "T1059 - Command and Scripting Interpreter"},
+SERVICES = {
+    "ssh":    {"port": 2222, "banner": b"SSH-2.0-OpenSSH_7.4\r\n"},
+    "http":   {"port": 8888, "banner": b"HTTP/1.1 200 OK\r\nServer: Apache/2.2.34\r\nContent-Type: text/html\r\n\r\nWelcome\r\n"},
+    "ftp":    {"port": 2121, "banner": b"220 (vsFTPd 2.3.4)\r\n"},
+    "telnet": {"port": 2323, "banner": b"\xff\xfb\x01\xff\xfb\x03\xff\xfd\x27Login: "},
 }
 
+# MITRE ATT&CK TTP mapping
+MITRE_MAP = {
+    "ssh":    "T1110",   # Brute Force
+    "ftp":    "T1110",
+    "telnet": "T1021",   # Remote Services
+    "http":   "T1190",   # Exploit Public-Facing Application
+}
 
-def classify_ttp(service: str, payload: str) -> str:
-    payload_lower = payload.lower()
-    if service == "ssh":
-        if any(cmd in payload_lower for cmd in ["ls", "cat", "wget", "curl", "chmod", "python"]):
-            return MITRE_TTPS["ssh"]["command_exec"]
-        return MITRE_TTPS["ssh"]["credential_attempt"]
-    if service == "http":
-        if any(s in payload_lower for s in ["select", "union", "drop", "insert", "'"]):
-            return MITRE_TTPS["http"]["sql_injection"]
-        return MITRE_TTPS["http"]["default"]
-    if service == "ftp":
-        return MITRE_TTPS["ftp"]["credential"]
-    if service == "telnet":
-        return MITRE_TTPS["telnet"]["command_exec"]
-    return "T1046 - Network Service Discovery"
+SQLI_PATTERN = re.compile(
+    r"(union\s+select|or\s+'1'='1|drop\s+table|xp_cmdshell|--|;\s*select)", re.IGNORECASE
+)
 
 
-def log_to_backend(src_ip: str, port: int, service: str, payload: str, credentials: Optional[str] = None, duration: float = 0.0, ttp: str = ""):
+def _extract_credentials(service: str, raw_bytes: bytes) -> list[dict]:
+    """Parse username/password pairs from raw session bytes."""
+    text = raw_bytes.decode("utf-8", errors="replace")
+    creds = []
+
+    if service in ("ssh", "ftp", "telnet"):
+        # Look for patterns: "USER admin\r\nPASS secret" or "login: admin\r\nPassword: secret"
+        user_match = re.search(r"(?:user|login|username)[:\s]+([^\r\n]+)", text, re.IGNORECASE)
+        pass_match = re.search(r"(?:pass|password)[:\s]+([^\r\n]+)", text, re.IGNORECASE)
+        if user_match or pass_match:
+            creds.append({
+                "username": user_match.group(1).strip() if user_match else "",
+                "password": pass_match.group(1).strip() if pass_match else "",
+            })
+
+    elif service == "http":
+        # Look for Basic Auth or form POST body
+        auth_match = re.search(r"Authorization:\s*Basic\s+(\S+)", text)
+        if auth_match:
+            import base64
+            try:
+                decoded = base64.b64decode(auth_match.group(1)).decode("utf-8", errors="replace")
+                if ":" in decoded:
+                    u, p = decoded.split(":", 1)
+                    creds.append({"username": u, "password": p})
+            except Exception:
+                pass
+        form_match = re.search(r"(?:username|user)=([^&\s]+).*?(?:password|pass)=([^&\s]+)",
+                               text, re.IGNORECASE)
+        if form_match:
+            creds.append({"username": form_match.group(1), "password": form_match.group(2)})
+
+    return creds
+
+
+def _classify_ttps(service: str, commands: list[str]) -> list[str]:
+    """Map observed behavior to MITRE ATT&CK TTP IDs."""
+    ttps = set()
+    base_ttp = MITRE_MAP.get(service)
+    if base_ttp:
+        ttps.add(base_ttp)
+
+    text = " ".join(commands).lower()
+
+    if any(cmd in text for cmd in ["ls", "dir", "pwd", "whoami", "id", "uname"]):
+        ttps.add("T1082")  # System Information Discovery
+    if any(cmd in text for cmd in ["cat /etc/passwd", "cat /etc/shadow", "net user"]):
+        ttps.add("T1003")  # OS Credential Dumping
+    if any(cmd in text for cmd in ["wget", "curl", "fetch", "download"]):
+        ttps.add("T1041")  # Exfiltration Over C2 Channel
+    if any(cmd in text for cmd in ["bash", "sh", "cmd", "powershell", "/bin/"]):
+        ttps.add("T1059")  # Command and Scripting Interpreter
+    if SQLI_PATTERN.search(text):
+        ttps.add("T1190")  # Exploit Public-Facing Application
+    if len(commands) > 5:
+        ttps.add("T1110.004")  # Credential Stuffing
+
+    return sorted(ttps)
+
+
+def _write_to_db(
+    src_ip: str, src_port: int, service: str,
+    credentials: list, commands: list, raw_bytes: bytes, duration: float
+):
+    """Write honeypot interaction to the honeypot_logs table."""
+    ttps = _classify_ttps(service, commands)
+    db = SessionLocal()
     try:
-        params = {
-            "src_ip": src_ip,
-            "port": port,
-            "service": service,
-            "payload": payload[:500],
-            "credentials": credentials,
-            "session_duration": duration,
-            "mitre_ttp": ttp,
-        }
-        requests.post(f"{settings.app.API_BASE_URL}/api/honeypot/log", params=params, timeout=5)
-    except Exception as e:
-        logger.error(f"Failed to log to backend: {e}")
-
-
-async def handle_ssh(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-    addr = writer.get_extra_info("peername")
-    src_ip = addr[0] if addr else "unknown"
-    start = time.time()
-    writer.write(b"SSH-2.0-OpenSSH_7.4\r\n")
-    await writer.drain()
-    try:
-        await asyncio.wait_for(reader.read(256), timeout=5)
-        writer.write(b"login as: ")
-        await writer.drain()
-        username = (await asyncio.wait_for(reader.readline(), timeout=10)).decode(errors="ignore").strip()
-        writer.write(f"{username}@honeypot's password: ".encode())
-        await writer.drain()
-        password = (await asyncio.wait_for(reader.readline(), timeout=10)).decode(errors="ignore").strip()
-        creds = f"{username}:{password}"
-        writer.write(b"\r\nAccess denied.\r\n")
-        await writer.drain()
-        ttp = classify_ttp("ssh", username + password)
-        log_to_backend(src_ip, 22, "ssh", f"AUTH ATTEMPT: {username}/{password}", credentials=creds, duration=time.time() - start, ttp=ttp)
-    except Exception:
-        pass
-    finally:
-        writer.close()
-
-
-async def handle_http(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-    addr = writer.get_extra_info("peername")
-    src_ip = addr[0] if addr else "unknown"
-    start = time.time()
-    try:
-        request_data = await asyncio.wait_for(reader.read(4096), timeout=5)
-        request_str = request_data.decode(errors="ignore")
-        ttp = classify_ttp("http", request_str)
-        response = (
-            "HTTP/1.1 200 OK\r\nServer: Apache/2.2.34 (Unix)\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n"
-            "<html><body><h1>Welcome to Admin</h1></body></html>"
+        log = models.HoneypotLog(
+            timestamp=datetime.now(timezone.utc),
+            src_ip=src_ip,
+            port=src_port,
+            service=service,
+            payload=raw_bytes.hex(),
+            credentials_attempted=json.dumps(credentials),
+            session_duration=round(duration, 3),
+            mitre_ttp=json.dumps(ttps),
         )
-        writer.write(response.encode())
-        await writer.drain()
-        log_to_backend(src_ip, 80, "http", request_str[:500], duration=time.time() - start, ttp=ttp)
-    except Exception:
-        pass
+        db.add(log)
+        db.commit()
+        logger.info(f"[Honeypot] {service.upper()} session from {src_ip}:{src_port} "
+                    f"({len(credentials)} creds, {len(commands)} cmds, TTPs: {ttps})")
+    except Exception as e:
+        logger.warning(f"[Honeypot] DB write error: {e}")
+        db.rollback()
     finally:
-        writer.close()
+        db.close()
 
 
-async def handle_ftp(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-    addr = writer.get_extra_info("peername")
-    src_ip = addr[0] if addr else "unknown"
-    start = time.time()
-    writer.write(b"220 (vsFTPd 2.3.4)\r\n")
-    await writer.drain()
-    username = ""
-    try:
-        while True:
-            line = (await asyncio.wait_for(reader.readline(), timeout=10)).decode(errors="ignore").strip()
-            if not line:
-                break
-            if line.upper().startswith("USER "):
-                username = line[5:]
-                writer.write(b"331 Please specify the password.\r\n")
-            elif line.upper().startswith("PASS "):
-                password = line[5:]
-                creds = f"{username}:{password}"
-                writer.write(b"530 Login incorrect.\r\n")
-                await writer.drain()
-                log_to_backend(src_ip, 21, "ftp", f"FTP AUTH: {line}", credentials=creds, duration=time.time() - start, ttp=classify_ttp("ftp", line))
-                break
-            else:
-                writer.write(b"530 Please login with USER and PASS.\r\n")
-            await writer.drain()
-    except Exception:
-        pass
-    finally:
-        writer.close()
+class HoneypotSession:
+    def __init__(self, reader, writer, service: str, cfg: dict):
+        self.reader = reader
+        self.writer = writer
+        self.service = service
+        self.cfg = cfg
+        self.start_time = time.time()
+        peername = writer.get_extra_info("peername") or ("0.0.0.0", 0)
+        self.src_ip, self.src_port = peername[0], int(peername[1])
+        self.credentials: list = []
+        self.commands: list = []
+        self.raw_bytes = bytearray()
 
-
-async def handle_telnet(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-    addr = writer.get_extra_info("peername")
-    src_ip = addr[0] if addr else "unknown"
-    start = time.time()
-    writer.write(b"\r\nUbuntu 18.04 LTS\r\nlogin: ")
-    await writer.drain()
-    try:
-        username = (await asyncio.wait_for(reader.readline(), timeout=10)).decode(errors="ignore").strip()
-        writer.write(b"Password: ")
-        await writer.drain()
-        password = (await asyncio.wait_for(reader.readline(), timeout=10)).decode(errors="ignore").strip()
-        creds = f"{username}:{password}"
-        writer.write(b"\r\nLogin incorrect\r\n")
-        await writer.drain()
-        log_to_backend(src_ip, 23, "telnet", f"CREDS:{creds}", credentials=creds, duration=time.time() - start, ttp=classify_ttp("telnet", creds))
-    except Exception:
-        pass
-    finally:
-        writer.close()
-
-
-async def run_honeypot():
-    services = [("SSH", 22, handle_ssh), ("HTTP", 80, handle_http), ("FTP", 21, handle_ftp), ("Telnet", 23, handle_telnet)]
-    servers = []
-    for name, port, handler in services:
+    async def run(self):
         try:
-            server = await asyncio.start_server(handler, "0.0.0.0", port)
-            servers.append(server)
-            logger.info(f"[Honeypot] {name} listening on port {port}")
-        except PermissionError:
-            fallback = port + 10000
-            server = await asyncio.start_server(handler, "0.0.0.0", fallback)
-            servers.append(server)
-            logger.info(f"[Honeypot] {name} listening on port {fallback} (fallback)")
+            self.writer.write(self.cfg["banner"])
+            await self.writer.drain()
+            await asyncio.wait_for(self._read_loop(), timeout=30.0)
+        except (asyncio.TimeoutError, ConnectionResetError, BrokenPipeError):
+            pass
         except Exception as e:
-            logger.error(f"[Honeypot] Failed to start {name} on {port}: {e}")
+            logger.debug(f"[Honeypot/{self.service}] session error: {e}")
+        finally:
+            duration = time.time() - self.start_time
+            self.credentials = _extract_credentials(self.service, bytes(self.raw_bytes))
+            _write_to_db(
+                self.src_ip, self.src_port, self.service,
+                self.credentials, self.commands, bytes(self.raw_bytes), duration
+            )
+            try:
+                self.writer.close()
+            except Exception:
+                pass
 
-    if not servers:
-        logger.error("No honeypot services started.")
-        return
-    await asyncio.gather(*[s.serve_forever() for s in servers])
+    async def _read_loop(self):
+        while True:
+            data = await self.reader.read(4096)
+            if not data:
+                break
+            self.raw_bytes.extend(data)
+            text = data.decode("utf-8", errors="replace").strip()
+            if text:
+                for line in text.splitlines():
+                    line = line.strip()
+                    if line:
+                        self.commands.append(line)
+            # Send a realistic prompt for interactive services
+            if self.service == "ssh":
+                self.writer.write(b"Password: ")
+            elif self.service == "ftp":
+                self.writer.write(b"331 Password required\r\n")
+            elif self.service == "telnet":
+                self.writer.write(b"Password: ")
+            elif self.service == "http":
+                self.writer.write(b"HTTP/1.1 401 Unauthorized\r\n\r\n")
+                break
+            try:
+                await self.writer.drain()
+            except Exception:
+                break
+
+
+class HoneypotServer:
+    def __init__(self):
+        self._servers: list = []
+
+    async def start(self):
+        for name, cfg in SERVICES.items():
+            try:
+                server = await asyncio.start_server(
+                    lambda r, w, n=name, c=cfg: asyncio.create_task(
+                        HoneypotSession(r, w, n, c).run()
+                    ),
+                    "0.0.0.0",
+                    cfg["port"],
+                )
+                self._servers.append(server)
+                logger.info(f"[Honeypot] {name.upper()} listening on port {cfg['port']}")
+            except Exception as e:
+                logger.warning(f"[Honeypot] Failed to start {name}: {e}")
+
+    async def stop(self):
+        for s in self._servers:
+            s.close()
+            try:
+                await s.wait_closed()
+            except Exception:
+                pass
+
+
+honeypot_server = HoneypotServer()

@@ -59,7 +59,13 @@ class Benchmarker:
         print(f"Weighted F1:       {f1_score(y_true, y_pred, average='weighted'):.4f}")
         
         print("\nPer-Class Report:")
-        print(classification_report(y_true, y_pred, labels=range(len(classes)), target_names=classes, zero_division=0))
+        present_labels = sorted(set(y_true) | set(y_pred))
+        print(classification_report(
+            y_true, y_pred,
+            labels=present_labels,
+            target_names=[classes[i] for i in present_labels if i < len(classes)],
+            zero_division=0
+        ))
         
         print("[SUCCESS] Benchmark complete.")
 

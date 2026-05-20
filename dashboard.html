@@ -1346,6 +1346,36 @@
 // STATE
 // ═══════════════════════════════════════════════
 const API = 'http://127.0.0.1:8000';
+// Counter animation utility
+function animateCounter(element, targetValue, duration = 300) {
+  const startValue = parseInt(element.textContent.replace(/,/g, '')) || 0;
+  if (startValue === targetValue) return;
+  const startTime = performance.now();
+  const update = (currentTime) => {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const current = Math.round(startValue + (targetValue - startValue) * eased);
+    element.textContent = current.toLocaleString();
+    if (progress < 1) requestAnimationFrame(update);
+  };
+  requestAnimationFrame(update);
+}
+
+const _lastHourBaselines = { networkAttacks: 0, stegDetections: 0, blockedIPs: 0, correlatedIncidents: 0 };
+let _baselineSetAt = Date.now();
+
+function updateMetricCard(cardId, newValue, lastHourValue) {
+  const el = document.getElementById(cardId);
+  const pctEl = document.getElementById(cardId + '-change');
+  if (el) animateCounter(el, newValue);
+  if (pctEl && lastHourValue != null) {
+    const pct = lastHourValue > 0 ? Math.round(((newValue - lastHourValue) / lastHourValue) * 100) : 0;
+    pctEl.textContent = (pct >= 0 ? '+' : '') + pct + '% vs last hour';
+    pctEl.style.color = pct > 0 ? 'var(--accent-red)' : 'var(--accent-green)';
+  }
+}
+
 const state = {
   incidents: [],
   honeypotLogs: [],
@@ -1554,15 +1584,15 @@ function prependEvent(feedId, inc, badge) {
 // STATS REFRESH
 // ═══════════════════════════════════════════════
 async function refreshStats() {
-  const s = await apiGet('/api/stats');
-  if (!s) return;
-  state.stats = s;
-
-  document.getElementById('h-attacks').textContent = s.total_network_attacks;
-  document.getElementById('h-steg').textContent = s.total_steg_detections;
-  document.getElementById('h-blocked').textContent = s.total_blocked_ips;
-  document.getElementById('h-corr').textContent = s.total_correlated_incidents;
-  document.getElementById('h-honey').textContent = s.total_honeypot_interactions;
+  const networkAttacks = state.incidents.filter(i=>i.pipeline_primary==='idps').length;
+  const stegDetections = state.incidents.filter(i=>i.pipeline_primary==='steg').length;
+  const blockedIPs = state.stats.total_blocked_ips || 0;
+  const correlatedIncidents = state.stats.total_correlated_incidents || 0;
+  
+  updateMetricCard('h-attacks', networkAttacks, _lastHourBaselines.networkAttacks);
+  updateMetricCard('h-steg', stegDetections, _lastHourBaselines.stegDetections);
+  updateMetricCard('h-blocked', blockedIPs, _lastHourBaselines.blockedIPs);
+  updateMetricCard('h-corr', correlatedIncidents, _lastHourBaselines.correlatedIncidents);
 }
 
 function updateNetStats() {

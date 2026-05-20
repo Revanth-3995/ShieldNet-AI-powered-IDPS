@@ -72,7 +72,10 @@ class FeatureExtractor:
         
         # 5. Information Theory & Entropy
         features["payload_entropy"] = FeatureExtractor._calculate_entropy(flow.payload_samples) if getattr(flow, "payload_samples", None) else 0.0
+        features.setdefault("payload_entropy", 0.0)
+        
         features["dst_port_type"] = 1.0 if getattr(flow, "dst_port", 49152) < 1024 else (0.5 if getattr(flow, "dst_port", 49152) < 49151 else 0.0)
+        features.setdefault("dst_port_type", "ephemeral")
         
         # 6. Directional Asymmetry
         features["pkt_count_asymmetry"] = (flow.fwd_packets - flow.bwd_packets) / total_packets if total_packets > 0 else 0

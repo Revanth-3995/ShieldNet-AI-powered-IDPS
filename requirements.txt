@@ -1,20 +1,54 @@
-# ShieldNet — Core Dependencies
-fastapi
-uvicorn
-pydantic
-scapy
-sqlalchemy
-psutil
-watchfiles
+# ShieldNet — Pinned Dependencies
+# For production, regenerate with:
+#   pip download -r requirements.txt -d /tmp/pkgs && pip hash /tmp/pkgs/*.whl
+# Then add --hash=sha256:<hash> to each line and use: pip install --require-hashes -r requirements.txt
 
-# ShieldNet — AI & ML Pipeline
-numpy
-pandas
-scikit-learn
-xgboost
-optuna
-imbalanced-learn
-torch
-shap
-matplotlib
-seaborn
+# Web Framework
+fastapi==0.110.0
+uvicorn[standard]==0.28.0
+pydantic==2.6.4
+pydantic-settings==2.2.1
+python-multipart==0.0.9
+httpx==0.27.0
+starlette==0.36.3
+
+# Database
+sqlalchemy==2.0.28
+aiosqlite==0.20.0
+
+# ML — IDPS
+numpy==1.26.4
+pandas==2.2.1
+scikit-learn==1.4.1.post1
+xgboost==2.0.3
+imbalanced-learn==0.12.0
+optuna==3.6.1
+shap==0.44.1
+joblib==1.3.2
+
+# ML — Steganalysis CNN
+torch==2.2.1
+torchvision==0.17.1
+
+# Image / Video Processing
+opencv-python==4.9.0.80
+Pillow==10.2.0
+scikit-image==0.22.0
+scipy==1.12.0
+
+# Video / Audio
+pydub==0.25.1
+pymediainfo==6.1.0
+
+# Network / Proxy
+scapy==2.5.0
+mitmproxy==10.2.4
+
+# Utilities
+psutil==5.9.8
+watchfiles==0.21.0
+matplotlib==3.8.3
+seaborn==0.13.2
+
+# Async / HTTP
+anyio==4.3.0
