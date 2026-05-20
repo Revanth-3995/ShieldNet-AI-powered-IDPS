@@ -48,3 +48,10 @@ models/
 *.db
 *.pkl
 *.pyc
+
+.venv/
+data/
+logs/
+temp/
+quarantine/
+uploads/
