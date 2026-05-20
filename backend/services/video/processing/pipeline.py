@@ -56,7 +56,7 @@ class VideoAnalysisPipeline:
         
         # Start extractor (producer)
         loop = asyncio.get_event_loop()
-        extraction_task = loop.run_in_executor(None, self._extract_to_queue, video_path, frame_queue)
+        extraction_task = loop.run_in_executor(None, self._extract_to_queue, video_path, frame_queue, loop)
         
         await extraction_task
         
@@ -74,7 +74,7 @@ class VideoAnalysisPipeline:
             all_frame_results.extend(res)
         all_frame_results.extend(remaining)
             
-        all_frame_results.sort(key=lambda x: x["timestamp_ms"])
+        all_frame_results.sort(key=lambda x: x.get("timestamp_ms", 0))
         
         # Aggregate with temporal reasoning
         final_result = self.aggregator.aggregate(all_frame_results)
@@ -89,12 +89,11 @@ class VideoAnalysisPipeline:
             **final_result
         }
 
-    def _extract_to_queue(self, video_path: str, queue: asyncio.Queue):
+    def _extract_to_queue(self, video_path: str, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
         """Producer function: extracts frames and puts them in the queue."""
         for frame_data in self.extractor.extract_intelligent_frames(video_path):
             try:
-                # We use a timeout to avoid hanging if something goes wrong
-                asyncio.run_coroutine_threadsafe(queue.put(frame_data), asyncio.get_event_loop()).result(timeout=30)
+                asyncio.run_coroutine_threadsafe(queue.put(frame_data), loop).result(timeout=30)
             except Exception as e:
                 logger.error(f"Failed to put frame in queue: {e}")
                 break
