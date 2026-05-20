@@ -37,16 +37,13 @@ backend/db/shieldnet.db-journal
 Thumbs.db
 
 data/
-models/
 *.csv
 *.pcap
-*.pkl
 *.joblib
 *.h5
 *.pt
 *.pth__pycache__
 *.db
-*.pkl
 *.pyc
 
 .venv/
