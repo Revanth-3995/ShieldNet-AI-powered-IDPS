@@ -1,0 +1,20 @@
+# ShieldNet — Core Dependencies
+fastapi
+uvicorn
+pydantic
+scapy
+sqlalchemy
+psutil
+watchfiles
+
+# ShieldNet — AI & ML Pipeline
+numpy
+pandas
+scikit-learn
+xgboost
+optuna
+imbalanced-learn
+torch
+shap
+matplotlib
+seaborn
