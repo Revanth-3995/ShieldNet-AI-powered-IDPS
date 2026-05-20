@@ -45,3 +45,6 @@ models/
 *.h5
 *.pt
 *.pth__pycache__
+*.db
+*.pkl
+*.pyc
