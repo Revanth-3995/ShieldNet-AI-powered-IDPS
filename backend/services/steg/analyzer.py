@@ -34,6 +34,23 @@ try:
 except ImportError:
     VIDEO_ENGINE_AVAILABLE = False
 
+try:
+    from PIL import Image as _PILImage
+    _PIL_AVAILABLE = True
+except ImportError:
+    _PIL_AVAILABLE = False
+
+MOCK_MODE: bool = not _PIL_AVAILABLE or not STEG_ALG_AVAILABLE
+
+if MOCK_MODE:
+    logger.warning(
+        "=" * 60 + "\n"
+        "STEG ANALYZER RUNNING IN MOCK MODE\n"
+        "Results are SYNTHETIC — not real detections.\n"
+        "Install Pillow: pip install Pillow\n"
+        "=" * 60
+    )
+
 
 def _mock_image_analysis(seed: str = "") -> dict:
     """Produce realistic mock analysis scores for demo/simulation."""
@@ -47,6 +64,7 @@ def _mock_image_analysis(seed: str = "") -> dict:
         base = rng.uniform(0.02, 0.25)
         algo = None
     return {
+        "mock": True,
         "chi_square": rng.uniform(0.6, 0.9) if is_steg else rng.uniform(0.0, 0.15),
         "sample_pair": rng.uniform(0.5, 0.85) if is_steg else rng.uniform(0.0, 0.12),
         "rs_analysis": rng.uniform(0.6, 0.92) if is_steg else rng.uniform(0.0, 0.18),
@@ -71,7 +89,9 @@ def analyze_image_bytes(content: bytes, filename: str = "image") -> dict:
             return result
         except Exception as e:
             logger.warning(f"Image analysis error: {e}")
-    return _mock_image_analysis(filename)
+    result = _mock_image_analysis(filename)
+    result["mock"] = True
+    return result
 
 
 def post_steg_event(

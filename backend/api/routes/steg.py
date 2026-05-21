@@ -69,26 +69,29 @@ async def create_steg_event(payload: StegEventCreate, db: Session = Depends(get_
 
     if payload.frame_results:
         for fr in payload.frame_results:
+            # Handle if fr is a Pydantic model
+            fr_dict = fr.dict() if hasattr(fr, 'dict') else fr
             IncidentsRepository.add_video_frame_result(db, {
                 "steg_scan_id": scan.id,
-                "frame_number": fr.get("frame_number", 0),
-                "timestamp_ms": fr.get("timestamp_ms"),
-                "confidence": fr.get("confidence", 0.0),
-                "chi_square": fr.get("chi_square"),
-                "rs_score": fr.get("rs_score"),
-                "dct_score": fr.get("dct_score"),
-                "anomaly_type": fr.get("anomaly_type"),
+                "frame_number": fr_dict.get("frame_idx", 0) if "frame_idx" in fr_dict else fr_dict.get("frame_number", 0),
+                "timestamp_ms": fr_dict.get("timestamp_ms"),
+                "confidence": fr_dict.get("confidence", 0.0),
+                "chi_square": fr_dict.get("chi_square"),
+                "rs_score": fr_dict.get("rs_score"),
+                "dct_score": fr_dict.get("dct_score"),
+                "anomaly_type": fr_dict.get("anomaly_type") or fr_dict.get("algorithm_detected"),
             })
 
     if payload.audio_results:
         for ar in payload.audio_results:
+            ar_dict = ar.dict() if hasattr(ar, 'dict') else ar
             IncidentsRepository.add_audio_scan_result(db, {
                 "steg_scan_id": scan.id,
-                "channel": ar.get("channel"),
-                "rs_score": ar.get("rs_score"),
-                "echo_score": ar.get("echo_score"),
-                "confidence": ar.get("confidence", 0.0),
-                "sample_range_flagged": ar.get("sample_range_flagged"),
+                "channel": ar_dict.get("channel"),
+                "rs_score": ar_dict.get("rs_score"),
+                "echo_score": ar_dict.get("echo_score"),
+                "confidence": ar_dict.get("confidence", 0.0),
+                "sample_range_flagged": ar_dict.get("sample_range_flagged"),
             })
 
     assign_correlation(db, incident)
@@ -252,12 +255,13 @@ async def _handle_steg_report(payload: StegEventCreate, db: Session):
     scan = IncidentsRepository.add_steg_scan(db, scan_data)
 
     for fr in payload.frame_results:
+        fr_dict = fr.dict() if hasattr(fr, 'dict') else fr
         IncidentsRepository.add_video_frame_result(db, {
             "steg_scan_id": scan.id,
-            "frame_number": fr.get("frame_number", 0),
-            "timestamp_ms": fr.get("timestamp_ms"),
-            "confidence": fr.get("confidence", 0.0),
-            "anomaly_type": fr.get("anomaly_type"),
+            "frame_number": fr_dict.get("frame_idx", 0) if "frame_idx" in fr_dict else fr_dict.get("frame_number", 0),
+            "timestamp_ms": fr_dict.get("timestamp_ms"),
+            "confidence": fr_dict.get("confidence", 0.0),
+            "anomaly_type": fr_dict.get("anomaly_type") or fr_dict.get("algorithm_detected"),
         })
 
     assign_correlation(db, incident)
@@ -290,6 +294,99 @@ async def _handle_steg_report(payload: StegEventCreate, db: Session):
         "confidence": payload.confidence,
         "severity": severity,
     })
+
+
+@router.get("/video/feed")
+def get_video_feed(limit: int = 50, db: Session = Depends(get_db)):
+    """Last N video steg scans for Panel 5."""
+    scans = (
+        db.query(models.StegScan)
+        .filter(models.StegScan.media_type == "video")
+        .order_by(models.StegScan.id.desc())
+        .limit(limit)
+        .all()
+    )
+    results = []
+    for s in scans:
+        incident = db.query(models.Incident).filter(models.Incident.id == s.incident_id).first()
+        flagged_frames = (
+            db.query(models.VideoFrameResult)
+            .filter(models.VideoFrameResult.steg_scan_id == s.id,
+                    models.VideoFrameResult.confidence >= 0.4)
+            .count()
+        )
+        audio = (
+            db.query(models.AudioScanResult)
+            .filter(models.AudioScanResult.steg_scan_id == s.id)
+            .first()
+        )
+        results.append({
+            "id": s.id,
+            "incident_id": s.incident_id,
+            "filename": s.filename,
+            "file_size": s.file_size,
+            "confidence": s.confidence,
+            "severity": incident.severity if incident else "low",
+            "frame_count": s.frame_count or 0,
+            "flagged_frames_count": flagged_frames,
+            "audio_flagged": bool(audio and audio.confidence >= 0.4),
+            "quarantine_path": s.quarantine_path,
+            "timestamp": incident.detected_at.isoformat() if incident else None,
+            "algorithm_detected": s.algorithm_detected,
+        })
+    return results
+
+
+@router.get("/quarantine")
+def get_quarantine(db: Session = Depends(get_db)):
+    """List all quarantined files (steg scans with a quarantine_path)."""
+    scans = (
+        db.query(models.StegScan)
+        .filter(models.StegScan.quarantine_path.isnot(None))
+        .order_by(models.StegScan.id.desc())
+        .limit(100)
+        .all()
+    )
+    return [
+        {
+            "id": s.id,
+            "filename": s.filename,
+            "media_type": s.media_type,
+            "confidence": s.confidence,
+            "quarantine_path": s.quarantine_path,
+            "payload_estimate": s.payload_estimate,
+        }
+        for s in scans
+    ]
+
+
+@router.get("/health")
+def steg_health():
+    """Returns mock mode status and CNN load status for Panel 9 warning."""
+    from backend.services.steg.cnn.cnn_classifier import _MODEL_LOADED
+    try:
+        from backend.services.steg.algorithms import (
+            chi_square_analysis, rs_analysis, sample_pair_analysis
+        )
+        algorithms_available = [
+            "chi_square", "sample_pair", "rs_analysis",
+            "dct_histogram", "pixel_histogram", "noise_residual", "benford_law"
+        ]
+    except ImportError:
+        algorithms_available = []
+    try:
+        from PIL import Image
+        pil_available = True
+    except ImportError:
+        pil_available = False
+    mock_mode = not pil_available
+    return {
+        "mock_mode": mock_mode,
+        "cnn_loaded": _MODEL_LOADED,
+        "algorithms_available": algorithms_available,
+        "pil_available": pil_available,
+        "warning": "Running in MOCK MODE — install Pillow for real analysis" if mock_mode else None,
+    }
 
 
 @router.get("/forensics/{incident_id}")
