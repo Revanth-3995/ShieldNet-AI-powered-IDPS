@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ShieldNet — Unified AI Cybersecurity Platform</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<!-- Leaflet.js -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/WLs=" crossorigin=""></script>
+<!-- D3.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"
+  integrity="sha512-M7nHCiNUOwFt6Us3r8alutZLm9qMt4s9951uo8jqO4UwJ1hziseL6O3ndFyigx6+LREfZqnhHxYjKRJ8ZQ69A=="
+  crossorigin="anonymous"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Rajdhani:wght@400;500;600;700&display=swap');
 
@@ -941,6 +950,17 @@
 
 <!-- ══════════════ VIEW: NETWORK IDPS ══════════════ -->
 <div class="view" id="view-network">
+  <!-- Panel 3: Network Attack Map -->
+  <div class="panel" style="margin-bottom:16px">
+    <div class="panel-header">
+      <span class="panel-title">Network Attack Origin Map</span>
+      <span class="panel-badge badge-idps">PIPELINE A — LIVE</span>
+    </div>
+    <div class="panel-body" style="padding:0">
+      <div id="attack-map" style="height:300px;width:100%;border-radius:0 0 8px 8px;"></div>
+    </div>
+  </div>
+
   <div class="grid-4">
     <div class="stat-card">
       <div class="stat-value text-orange" id="net-total">0</div>
@@ -1050,63 +1070,73 @@
 </div>
 
 <!-- ══════════════ VIEW: VIDEO STEG ══════════════ -->
+<!-- Panel 5: Video Covert Channel Monitor -->
 <div class="view" id="view-video-steg">
-  <div class="grid-3">
+  <!-- Stat row -->
+  <div class="grid-4" style="margin-bottom:16px">
     <div class="stat-card">
       <div class="stat-value text-orange" id="vid-total">0</div>
-      <div class="stat-label">Videos Scanned</div>
+      <div class="stat-label">Video Scans</div>
     </div>
     <div class="stat-card">
       <div class="stat-value text-red" id="vid-flagged">0</div>
-      <div class="stat-label">Flagged / Blocked</div>
+      <div class="stat-label">Covert Channels Detected</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value text-cyan" id="vid-avg-frames">—</div>
+      <div class="stat-value text-cyan" id="vid-frames">0</div>
       <div class="stat-label">Avg Frames Analyzed</div>
     </div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-header">
-      <span class="panel-title">Frame-Level Confidence Timeline</span>
-      <span class="panel-badge badge-video">VIDEO-STEG</span>
-    </div>
-    <div class="panel-body">
-      <div class="chart-container" style="height:200px">
-        <canvas id="chart-vid-frames" class="chart"></canvas>
-      </div>
+    <div class="stat-card">
+      <div class="stat-value text-purple" id="vid-audio">0</div>
+      <div class="stat-label">Audio Channels Flagged</div>
     </div>
   </div>
 
   <div class="grid-2">
+    <!-- Left: Video scan feed -->
     <div class="panel">
       <div class="panel-header">
-        <span class="panel-title">Video Steg Methods Detected</span>
+        <span class="panel-title">Live Video Scan Feed</span>
+        <span class="panel-badge badge-video">VIDEO-STEG</span>
       </div>
-      <div class="panel-body">
-        <div class="chart-container" style="height:180px">
-          <canvas id="chart-vid-methods" class="chart"></canvas>
+      <div class="panel-body" style="padding:10px">
+        <div class="event-feed" id="video-feed">
+          <div class="no-data">No video scans yet.</div>
         </div>
       </div>
     </div>
+
+    <!-- Right: Frame confidence chart -->
     <div class="panel">
       <div class="panel-header">
-        <span class="panel-title">Audio Analysis Results</span>
+        <span class="panel-title">Frame-Level Confidence</span>
+        <span class="panel-badge badge-live">SELECTED VIDEO</span>
       </div>
-      <div class="panel-body" id="audio-results-panel">
-        <div class="no-data">No audio steg data yet.</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-header">
-      <span class="panel-title">Video Steg Detection Feed</span>
-      <span class="panel-badge badge-video">PIPELINE B</span>
-    </div>
-    <div class="panel-body" style="padding:10px">
-      <div class="event-feed" id="video-feed">
-        <div class="no-data">No video steg detections yet.</div>
+      <div class="panel-body">
+        <div style="color:var(--text-muted);font-size:12px;margin-bottom:8px" id="vid-selected-label">
+          Click a scan in the feed to see frame analysis
+        </div>
+        <div class="chart-container" style="height:160px">
+          <canvas id="chart-video-frames" class="chart"></canvas>
+        </div>
+        <!-- Audio panel -->
+        <div style="margin-top:16px">
+          <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">Audio Analysis</div>
+          <div style="display:flex;gap:16px;align-items:center">
+            <span style="font-size:11px;color:var(--text-muted);width:80px">RS Score</span>
+            <div style="flex:1;background:var(--bg-3);border-radius:4px;height:8px">
+              <div id="audio-rs-bar" style="height:8px;border-radius:4px;background:var(--accent-orange);width:0%"></div>
+            </div>
+            <span id="audio-rs-val" style="font-size:11px;color:var(--text-secondary);width:36px">—</span>
+          </div>
+          <div style="display:flex;gap:16px;align-items:center;margin-top:6px">
+            <span style="font-size:11px;color:var(--text-muted);width:80px">Echo Score</span>
+            <div style="flex:1;background:var(--bg-3);border-radius:4px;height:8px">
+              <div id="audio-echo-bar" style="height:8px;border-radius:4px;background:var(--accent-purple);width:0%"></div>
+            </div>
+            <span id="audio-echo-val" style="font-size:11px;color:var(--text-secondary);width:36px">—</span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -1114,57 +1144,30 @@
 
 <!-- ══════════════ VIEW: HONEYPOT ══════════════ -->
 <div class="view" id="view-honeypot">
-  <div class="grid-4">
-    <div class="stat-card">
-      <div class="stat-value text-yellow" id="hp-total">0</div>
-      <div class="stat-label">Total Interactions</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-value text-red" id="hp-ssh">0</div>
-      <div class="stat-label">SSH Attempts</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-value text-orange" id="hp-http">0</div>
-      <div class="stat-label">HTTP Probes</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-value text-purple" id="hp-ftp">0</div>
-      <div class="stat-label">FTP / Telnet</div>
-    </div>
-  </div>
-
   <div class="panel">
     <div class="panel-header">
-      <span class="panel-title">Real-Time Honeypot Activity</span>
+      <span class="panel-title">Honeypot — Live Attacker Intelligence</span>
       <span class="panel-badge badge-live">● LIVE</span>
+      <span id="hp-count-badge" class="panel-badge" style="background:var(--bg-3)">0 interactions</span>
     </div>
-    <div class="panel-body" style="padding:10px">
-      <div class="event-feed" id="hp-feed">
-        <div class="no-data">No honeypot interactions yet. Start the honeypot service.</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="grid-2">
-    <div class="panel">
-      <div class="panel-header">
-        <span class="panel-title">Service Distribution</span>
-      </div>
-      <div class="panel-body">
-        <div class="chart-container" style="height:180px">
-          <canvas id="chart-hp-services" class="chart"></canvas>
-        </div>
-      </div>
-    </div>
-    <div class="panel">
-      <div class="panel-header">
-        <span class="panel-title">Credentials Harvested</span>
-      </div>
-      <div class="panel-body">
-        <div id="cred-list" style="max-height:180px; overflow-y:auto">
-          <div class="no-data">No credentials captured.</div>
-        </div>
-      </div>
+    <div class="panel-body" style="padding:0;overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead>
+          <tr style="background:var(--bg-2);color:var(--text-muted)">
+            <th style="padding:8px 12px;text-align:left">Time</th>
+            <th style="padding:8px 12px;text-align:left">Source IP</th>
+            <th style="padding:8px 12px;text-align:left">Service</th>
+            <th style="padding:8px 12px;text-align:left">Credentials</th>
+            <th style="padding:8px 12px;text-align:left">Payload</th>
+            <th style="padding:8px 12px;text-align:left">MITRE TTP</th>
+          </tr>
+        </thead>
+        <tbody id="honeypot-tbody">
+          <tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-muted)">
+            No honeypot interactions yet. Run attack_bruteforce.py
+          </td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -1177,24 +1180,19 @@
       <span class="panel-badge badge-live">CORRELATED</span>
     </div>
     <div class="panel-body">
-      <div class="flex gap-2 mb-3" style="align-items:center">
-        <input class="input-field" id="timeline-ip-input" placeholder="Enter IP address…" style="width:200px">
-        <button class="btn btn-cyan" onclick="loadTimeline()">Load Timeline</button>
-        <span id="timeline-pattern-badge" style="margin-left:8px"></span>
+      <!-- Inside view-timeline panel-body -->
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px">
+        <label style="color:var(--text-muted);font-size:13px">Source IP:</label>
+        <select id="timeline-ip-select"
+          style="background:var(--bg-2);color:var(--text-primary);border:1px solid var(--border);
+                 padding:6px 12px;border-radius:6px;font-size:13px;min-width:180px">
+          <option value="">— Select IP —</option>
+        </select>
+        <button onclick="loadTimeline()" class="btn-small">Load Timeline</button>
       </div>
-      <div id="timeline-ips" class="flex gap-2 mb-3 flex-wrap"></div>
-    </div>
-  </div>
-
-  <div class="panel" id="timeline-panel" style="display:none">
-    <div class="panel-header">
-      <span class="panel-title" id="timeline-ip-label">Timeline for</span>
-    </div>
-    <div class="panel-body">
-      <div class="timeline-container" id="timeline-vis">
-        <div class="timeline-line"></div>
-      </div>
-      <div style="margin-top:14px" id="timeline-details"></div>
+      <div id="d3-timeline" style="width:100%;min-height:220px;overflow-x:auto"></div>
+      <div id="timeline-story" style="margin-top:16px;font-size:13px;color:var(--text-secondary);
+           line-height:1.8;padding:12px;background:var(--bg-2);border-radius:6px;display:none"></div>
     </div>
   </div>
 </div>
@@ -1246,6 +1244,11 @@
 
 <!-- ══════════════ VIEW: CONTROL (Panel 9) ══════════════ -->
 <div class="view" id="view-control">
+  <div id="mock-mode-banner" style="display:none;background:#ffd60022;border:1px solid #ffd600;
+    border-radius:6px;padding:10px 16px;margin-bottom:16px;color:#ffd600;font-size:13px">
+    ⚠ Steg analyzer running in <b>MOCK MODE</b> — CNN weights not loaded and/or Pillow not installed.
+    Detection results are synthetic. Run: <code>pip install Pillow</code> and see TRAINING_GUIDE.md.
+  </div>
   <div class="grid-2">
     <div class="panel">
       <div class="panel-header">
@@ -1465,6 +1468,8 @@ function switchView(name) {
   document.getElementById('view-' + name).classList.add('active');
   event.target.classList.add('active');
 
+  if (name === 'network') { initMap(); }
+  if (name === 'video-steg') { loadVideoFeed(); }
   if (name === 'timeline') loadAllIPs();
   if (name === 'forensics') loadForensicList();
   if (name === 'control') { loadBlockedIPs(); loadWatchEndpoints(); checkHealth(); }
@@ -1536,6 +1541,10 @@ function handleWSEvent(ev) {
 
     // Update charts
     updateCharts();
+
+    if (ev.incident && ev.incident.source_ip) {
+      addMapMarker(ev.incident.source_ip, ev.incident.severity || 'medium');
+    }
 
   } else if (type === 'honeypot_interaction') {
     addHoneypotEvent(ev);
@@ -1805,49 +1814,42 @@ function updateEPMChart() {
 // HONEYPOT
 // ═══════════════════════════════════════════════
 function addHoneypotEvent(ev) {
-  const feed = document.getElementById('hp-feed');
-  if (!feed) return;
-  const placeholder = feed.querySelector('.no-data');
-  if (placeholder) placeholder.remove();
+  const tbody = document.getElementById('honeypot-tbody');
+  if (!tbody) return;
+  // Clear "no data" placeholder on first real event
+  if (tbody.querySelector('td[colspan]')) tbody.innerHTML = '';
 
-  const el = document.createElement('div');
-  el.className = 'hp-log';
-  el.innerHTML = `
-    <div class="flex justify-between">
-      <span class="text-cyan text-mono">${ev.src_ip}</span>
-      <span style="color:var(--accent-yellow)" class="text-mono">[${ev.service?.toUpperCase()||'?'}:${ev.port||'?'}]</span>
-      <span class="text-mono" style="font-size:10px;color:var(--text-muted)">${fmt(ev.timestamp)}</span>
-    </div>
-    ${ev.credentials ? `<div class="hp-creds">CREDS: ${ev.credentials}</div>` : ''}
-    ${ev.mitre_ttp ? `<div class="hp-ttp">TTP: ${ev.mitre_ttp}</div>` : ''}
-    ${ev.payload ? `<div class="hp-payload">PAYLOAD: ${ev.payload.substring(0,120)}${ev.payload.length>120?'…':''}</div>` : ''}
+  const svcColors = {ssh:'var(--accent-red)',http:'var(--accent-orange)',
+    ftp:'var(--accent-yellow)',telnet:'var(--accent-purple)'};
+  const svc = (ev.service || 'ssh').toLowerCase();
+  const color = svcColors[svc] || 'var(--text-secondary)';
+  const mitreId = (ev.mitre_ttp || '').match(/T\d+/)?.[0];
+  const mitreLink = mitreId
+    ? `<a href="https://attack.mitre.org/techniques/${mitreId}" target="_blank"
+        style="color:var(--accent-cyan)">${ev.mitre_ttp}</a>`
+    : (ev.mitre_ttp || '—');
+
+  const tr = document.createElement('tr');
+  tr.style.cssText = 'border-bottom:1px solid var(--border);animation:fadeIn 0.4s ease';
+  tr.innerHTML = `
+    <td style="padding:8px 12px;color:var(--text-muted)">${fmt(ev.timestamp)}</td>
+    <td style="padding:8px 12px;color:var(--accent-cyan);font-family:monospace">${ev.src_ip}</td>
+    <td style="padding:8px 12px">
+      <span style="background:${color}22;color:${color};padding:2px 8px;border-radius:4px;font-size:11px;text-transform:uppercase">${svc}</span>
+      <span style="color:var(--text-muted);margin-left:6px">:${ev.port}</span>
+    </td>
+    <td style="padding:8px 12px;font-family:monospace;color:var(--accent-orange)">${ev.credentials_attempted || '—'}</td>
+    <td style="padding:8px 12px;color:var(--text-muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+        title="${ev.payload || ''}">${ev.payload ? ev.payload.substring(0,40)+'…' : '—'}</td>
+    <td style="padding:8px 12px;font-size:11px">${mitreLink}</td>
   `;
-  feed.insertBefore(el, feed.firstChild);
-  while(feed.children.length > 40) feed.removeChild(feed.lastChild);
+  tbody.prepend(tr);
 
-  // Update service chart
-  const svcMap = {ssh:0,http:1,ftp:2,telnet:3};
-  const idx = svcMap[ev.service?.toLowerCase()];
-  if (idx !== undefined) {
-    charts.hpServices.data.datasets[0].data[idx]++;
-    charts.hpServices.update('none');
-  }
-
-  // Service counters
-  const svcEl = {ssh:'hp-ssh', http:'hp-http', ftp:'hp-ftp', telnet:'hp-ftp'};
-  const el2 = document.getElementById(svcEl[ev.service?.toLowerCase()]);
-  if (el2) el2.textContent = parseInt(el2.textContent||0)+1;
-  document.getElementById('hp-total').textContent = parseInt(document.getElementById('hp-total').textContent||0)+1;
-
-  // Credentials list
-  if (ev.credentials) {
-    const credList = document.getElementById('cred-list');
-    const placeholder2 = credList.querySelector('.no-data');
-    if (placeholder2) placeholder2.remove();
-    const c = document.createElement('div');
-    c.style.cssText = 'font-family:JetBrains Mono,monospace;font-size:11px;padding:4px 8px;background:var(--bg-2);border-radius:3px;margin-bottom:3px;color:var(--accent-red)';
-    c.textContent = `${ev.src_ip} → ${ev.credentials}`;
-    credList.insertBefore(c, credList.firstChild);
+  // Update counter badge
+  const badge = document.getElementById('hp-count-badge');
+  if (badge) {
+    const count = tbody.querySelectorAll('tr').length;
+    badge.textContent = `${count} interaction${count !== 1 ? 's' : ''}`;
   }
 }
 
@@ -1871,78 +1873,162 @@ async function loadHoneypot() {
 // TIMELINE (Panel 7)
 // ═══════════════════════════════════════════════
 async function loadAllIPs() {
-  const incs = await apiGet('/api/incidents?limit=200');
-  if (!incs) return;
-  const ips = [...new Set(incs.map(i=>i.source_ip))].slice(0,10);
-  const container = document.getElementById('timeline-ips');
-  container.innerHTML = '';
-  ips.forEach(ip => {
-    const btn = document.createElement('button');
-    btn.className = 'btn btn-cyan';
-    btn.style.fontSize = '10px';
-    btn.textContent = ip;
-    btn.onclick = () => {
-      document.getElementById('timeline-ip-input').value = ip;
-      loadTimeline();
-    };
-    container.appendChild(btn);
-  });
+  const data = await apiGet('/api/incidents?limit=500');
+  if (!data) return;
+  const ips = [...new Set(data.map(i => i.source_ip).filter(Boolean))].sort();
+  const sel = document.getElementById('timeline-ip-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Select IP —</option>' +
+    ips.map(ip => `<option value="${ip}">${ip}</option>`).join('');
 }
 
 async function loadTimeline() {
-  const ip = document.getElementById('timeline-ip-input').value.trim();
-  if (!ip) return;
+  const sel = document.getElementById('timeline-ip-select');
+  const ip = sel?.value;
+  if (!ip) { showToast('Timeline', 'Select an IP first', 'info'); return; }
+
   const data = await apiGet(`/api/timeline/${ip}`);
-  if (!data) return;
+  if (!data || !data.events || data.events.length === 0) {
+    document.getElementById('d3-timeline').innerHTML =
+      '<div class="no-data">No events found for this IP.</div>';
+    return;
+  }
 
-  document.getElementById('timeline-panel').style.display = 'block';
-  document.getElementById('timeline-ip-label').textContent = `Timeline for ${ip} — ${data.total_events} events`;
+  drawD3Timeline(data);
+  drawTimelineStory(data);
+}
 
-  const badge = document.getElementById('timeline-pattern-badge');
-  const patterns = {
-    apt_operation: ['APT OPERATION', 'badge-critical'],
-    covert_exfiltration: ['COVERT EXFIL', 'badge-video'],
-    network_attack: ['NETWORK ATTACK', 'badge-idps'],
-    suspicious: ['SUSPICIOUS', 'badge-steg'],
-    normal: ['NORMAL', 'badge-live'],
-  };
-  const [label, cls] = patterns[data.attack_pattern] || ['UNKNOWN', 'badge-steg'];
-  badge.innerHTML = `<span class="panel-badge ${cls}">${label}</span>`;
+function drawD3Timeline(data) {
+  const container = document.getElementById('d3-timeline');
+  container.innerHTML = '';
 
-  // Render timeline
-  const vis = document.getElementById('timeline-vis');
-  vis.innerHTML = '<div class="timeline-line"></div>';
-  data.events.forEach(ev => {
-    const dot = document.createElement('div');
-    dot.className = 'timeline-event';
-    const typeClass = ev.pipeline === 'idps' ? 'idps' : (ev.media_type === 'video' ? 'video' : 'steg');
-    dot.innerHTML = `
-      <div class="timeline-dot ${typeClass}" title="${ev.explanation||''}"></div>
-      <div class="timeline-label">
-        <div style="color:var(--accent-cyan);font-size:9px">${fmt(ev.timestamp)}</div>
-        <div>${ev.attack_type.replace('_steg_detected','')}</div>
-        <div style="color:${confColor(ev.confidence)}">${pct(ev.confidence)}</div>
-      </div>
-    `;
-    vis.appendChild(dot);
+  const events = data.events;
+  const W = container.clientWidth || 800;
+  const H = 220;
+  const margin = { top: 20, right: 30, bottom: 40, left: 120 };
+  const iW = W - margin.left - margin.right;
+  const iH = H - margin.top - margin.bottom;
+
+  const lanes = ['idps', 'image-steg', 'video-steg', 'honeypot'];
+  const laneLabels = { 'idps': 'IDPS', 'image-steg': 'IMAGE-STEG',
+    'video-steg': 'VIDEO-STEG', 'honeypot': 'HONEYPOT' };
+  const sevColor = { critical: '#ff2244', high: '#ff7700', medium: '#ffd600', low: '#00ff88' };
+
+  const times = events.map(e => new Date(e.timestamp));
+  const xScale = d3.scaleTime()
+    .domain([d3.min(times), d3.max(times) || new Date()])
+    .range([0, iW]);
+
+  const yScale = d3.scaleBand()
+    .domain(lanes)
+    .range([0, iH])
+    .padding(0.3);
+
+  const svg = d3.select(container).append('svg')
+    .attr('width', W).attr('height', H);
+  const g = svg.append('g')
+    .attr('transform', `translate(${margin.left},${margin.top})`);
+
+  // Lane backgrounds
+  lanes.forEach(lane => {
+    g.append('rect')
+      .attr('x', 0).attr('y', yScale(lane))
+      .attr('width', iW).attr('height', yScale.bandwidth())
+      .attr('fill', '#0a0f1c').attr('stroke', '#1a2640').attr('stroke-width', 1);
   });
 
-  // Detail list
-  const details = document.getElementById('timeline-details');
-  details.innerHTML = '';
-  data.events.forEach(ev => {
-    const row = document.createElement('div');
-    row.className = `event-item ${ev.severity}`;
-    row.style.marginBottom = '4px';
-    row.innerHTML = `
-      <div class="severity-dot sev-${ev.severity}"></div>
-      <span class="event-badge ${ev.pipeline_badge}">${ev.pipeline_badge}</span>
-      <span class="event-ip" style="width:auto;flex:1">${ev.attack_type}</span>
-      <span class="event-conf" style="color:${confColor(ev.confidence)}">${pct(ev.confidence)}</span>
-      <span class="event-time">${fmt(ev.timestamp)}</span>
-    `;
-    details.appendChild(row);
+  // Lane labels
+  lanes.forEach(lane => {
+    g.append('text')
+      .attr('x', -8).attr('y', yScale(lane) + yScale.bandwidth() / 2)
+      .attr('text-anchor', 'end').attr('dominant-baseline', 'middle')
+      .attr('font-size', 11).attr('fill', '#8899bb')
+      .text(laneLabels[lane] || lane.toUpperCase());
   });
+
+  // X axis
+  g.append('g')
+    .attr('transform', `translate(0,${iH})`)
+    .call(d3.axisBottom(xScale).ticks(5).tickFormat(d3.timeFormat('%H:%M:%S')))
+    .selectAll('text').attr('fill', '#8899bb').attr('font-size', 10);
+  g.selectAll('.domain,.tick line').attr('stroke', '#1a2640');
+
+  // Group correlation lines
+  const byGroup = d3.group(
+    events.filter(e => e.correlation_group_id),
+    e => e.correlation_group_id
+  );
+  byGroup.forEach((grpEvents) => {
+    if (grpEvents.length < 2) return;
+    const sorted = grpEvents.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+    for (let i = 0; i < sorted.length - 1; i++) {
+      g.append('line')
+        .attr('x1', xScale(new Date(sorted[i].timestamp)))
+        .attr('y1', yScale(getLane(sorted[i])) + yScale.bandwidth() / 2)
+        .attr('x2', xScale(new Date(sorted[i+1].timestamp)))
+        .attr('y2', yScale(getLane(sorted[i+1])) + yScale.bandwidth() / 2)
+        .attr('stroke', '#3b82f6').attr('stroke-width', 1).attr('stroke-dasharray', '4,3')
+        .attr('opacity', 0.5);
+    }
+  });
+
+  // Event diamonds
+  const tooltip = d3.select(container).append('div')
+    .style('position','absolute').style('background','var(--bg-2)')
+    .style('border','1px solid var(--border)').style('padding','8px 12px')
+    .style('border-radius','6px').style('font-size','11px').style('pointer-events','none')
+    .style('opacity', 0).style('color','var(--text-primary)').style('z-index','100');
+
+  events.forEach(ev => {
+    const lane = getLane(ev);
+    const x = xScale(new Date(ev.timestamp));
+    const y = yScale(lane) + yScale.bandwidth() / 2;
+    const color = sevColor[ev.severity] || '#8899bb';
+    const size = 7;
+    g.append('polygon')
+      .attr('points', `${x},${y-size} ${x+size},${y} ${x},${y+size} ${x-size},${y}`)
+      .attr('fill', color).attr('opacity', 0.9).attr('cursor', 'pointer')
+      .on('mouseover', function(event) {
+        tooltip.style('opacity', 1)
+          .html(`<b>${ev.attack_type}</b><br>Confidence: ${pct(ev.confidence)}<br>
+                 ${ev.explanation || ''}`);
+      })
+      .on('mousemove', function(event) {
+        tooltip.style('left', (event.offsetX + 10) + 'px')
+               .style('top', (event.offsetY - 30) + 'px');
+      })
+      .on('mouseout', () => tooltip.style('opacity', 0));
+  });
+}
+
+function getLane(ev) {
+  const badge = (ev.pipeline_badge || ev.pipeline || '').toLowerCase();
+  if (badge.includes('video')) return 'video-steg';
+  if (badge.includes('image') || badge.includes('steg')) return 'image-steg';
+  if (badge.includes('honey')) return 'honeypot';
+  return 'idps';
+}
+
+function drawTimelineStory(data) {
+  const story = document.getElementById('timeline-story');
+  if (!story || !data.events.length) return;
+  const sorted = [...data.events].sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const lines = sorted.map(ev =>
+    `${fmt(ev.timestamp)} — <span style="color:var(--accent-cyan)">${ev.pipeline_badge}</span>: ` +
+    `<b style="color:var(--text-primary)">${ev.attack_type}</b> ` +
+    `(${pct(ev.confidence)} confidence, ${ev.severity})`
+  );
+  const pattern = data.attack_pattern || 'suspicious';
+  const patternLabel = {
+    apt_operation: '⚠️ FULL APT OPERATION DETECTED',
+    covert_exfiltration: '🔴 COVERT EXFILTRATION CAMPAIGN',
+    network_attack: '🟠 SUSTAINED NETWORK ATTACK',
+    suspicious: '🟡 SUSPICIOUS ACTIVITY PATTERN',
+    normal: '🟢 NORMAL TRAFFIC',
+  }[pattern] || pattern;
+  story.style.display = 'block';
+  story.innerHTML = `<div style="color:var(--accent-orange);font-weight:600;margin-bottom:8px">
+    Attack Pattern: ${patternLabel}</div>` + lines.join('<br>');
 }
 
 // ═══════════════════════════════════════════════
@@ -2318,6 +2404,15 @@ async function checkHealth() {
     <div class="detail-row"><span class="detail-key">Version</span><span class="detail-val">${data.version}</span></div>
     <div class="detail-row"><span class="detail-key">Timestamp</span><span class="detail-val">${fmt(data.timestamp)}</span></div>
   `;
+  const stegHealth = await apiGet('/api/steg/health');
+  const mockBanner = document.getElementById('mock-mode-banner');
+  if (mockBanner) {
+    if (stegHealth?.mock_mode) {
+      mockBanner.style.display = 'block';
+    } else {
+      mockBanner.style.display = 'none';
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -2359,6 +2454,152 @@ async function loadInitialData() {
 
   await refreshStats();
   updateCharts();
+}
+
+let _map = null;
+const _mapMarkers = {};
+
+function initMap() {
+  if (_map) return;
+  _map = L.map('attack-map', { zoomControl: true, attributionControl: false }).setView([20, 0], 2);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 18
+  }).addTo(_map);
+}
+
+const _geoCache = {};
+async function geolocateIP(ip) {
+  if (_geoCache[ip]) return _geoCache[ip];
+  // Skip private IPs
+  if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.)/.test(ip)) {
+    return null;
+  }
+  try {
+    const r = await fetch(`https://ip-api.com/json/${ip}?fields=lat,lon,country,city`);
+    const d = await r.json();
+    if (d.lat) { _geoCache[ip] = d; return d; }
+  } catch(e) {}
+  return null;
+}
+
+async function addMapMarker(ip, severity) {
+  if (!_map) return;
+  const geo = await geolocateIP(ip);
+  if (!geo) return;
+  if (_mapMarkers[ip]) { _mapMarkers[ip].remove(); }
+  const color = severity === 'critical' ? '#ff2244' : severity === 'high' ? '#ff7700' : '#ffd600';
+  const marker = L.circleMarker([geo.lat, geo.lon], {
+    radius: 8, color, fillColor: color, fillOpacity: 0.8, weight: 2
+  }).addTo(_map).bindPopup(`<b>${ip}</b><br>${geo.city || ''}, ${geo.country || ''}<br>Severity: ${severity}`);
+  _mapMarkers[ip] = marker;
+  // Pulse animation: briefly increase radius
+  let r = 8;
+  const pulse = setInterval(() => {
+    r += 2;
+    marker.setRadius(r);
+    if (r >= 20) { clearInterval(pulse); marker.setRadius(8); }
+  }, 60);
+}
+
+let _videoFrameChart = null;
+
+function initVideoFrameChart() {
+  const ctx = document.getElementById('chart-video-frames');
+  if (!ctx || _videoFrameChart) return;
+  _videoFrameChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [{
+      label: 'Frame Confidence',
+      data: [],
+      borderColor: '#ff7700',
+      backgroundColor: 'rgba(255,119,0,0.15)',
+      borderWidth: 1.5,
+      pointRadius: 3,
+      tension: 0.3,
+      fill: true,
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#8899bb', maxTicksLimit: 10 }, grid: { color: '#1a2640' } },
+        y: { min: 0, max: 1, ticks: { color: '#8899bb' }, grid: { color: '#1a2640' } }
+      }
+    }
+  });
+}
+
+async function loadVideoFeed() {
+  const data = await apiGet('/api/steg/video/feed?limit=30');
+  if (!data || !Array.isArray(data)) return;
+  const feed = document.getElementById('video-feed');
+
+  let total = data.length;
+  let flagged = data.filter(s => s.confidence >= 0.7).length;
+  let totalFrames = data.reduce((a, s) => a + (s.frame_count || 0), 0);
+  let audioFlagged = data.filter(s => s.audio_flagged).length;
+  let avgFrames = total > 0 ? Math.round(totalFrames / total) : 0;
+
+  document.getElementById('vid-total').textContent = total;
+  document.getElementById('vid-flagged').textContent = flagged;
+  document.getElementById('vid-frames').textContent = avgFrames;
+  document.getElementById('vid-audio').textContent = audioFlagged;
+
+  if (data.length === 0) {
+    feed.innerHTML = '<div class="no-data">No video scans yet. Run steg_video.py</div>';
+    return;
+  }
+
+  feed.innerHTML = data.map(s => `
+    <div class="event-row" onclick="loadVideoFrames(${s.incident_id})" style="cursor:pointer">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:12px;color:var(--text-secondary)">${s.filename || 'video.mp4'}</span>
+        <span class="badge ${s.confidence >= 0.85 ? 'badge-critical' : s.confidence >= 0.7 ? 'badge-high' : 'badge-medium'}" style="font-size:10px">
+          ${pct(s.confidence)}
+        </span>
+      </div>
+      <div style="display:flex;gap:12px;margin-top:4px;font-size:11px;color:var(--text-muted)">
+        <span>📽 ${s.frame_count || 0} frames</span>
+        <span style="color:${s.flagged_frames_count > 0 ? 'var(--accent-red)' : 'var(--text-muted)'}">
+          ⚠ ${s.flagged_frames_count} anomalous
+        </span>
+        ${s.audio_flagged ? '<span style="color:var(--accent-purple)">🔊 audio flagged</span>' : ''}
+        ${s.quarantine_path ? '<span style="color:var(--accent-orange)">🔒 quarantined</span>' : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+async function loadVideoFrames(incidentId) {
+  if (!incidentId) return;
+  initVideoFrameChart();
+  const data = await apiGet(`/api/steg/forensics/${incidentId}`);
+  if (!data) return;
+
+  document.getElementById('vid-selected-label').textContent =
+    `Showing: ${data.steg_scan?.filename || 'video'} — ${data.video_frames?.length || 0} frames`;
+
+  const frames = data.video_frames || data.frame_results || [];
+  if (_videoFrameChart) {
+    _videoFrameChart.data.labels = frames.map(f => `F${f.frame_number}`);
+    _videoFrameChart.data.datasets[0].data = frames.map(f => f.confidence);
+    // Color anomalous frames red
+    _videoFrameChart.data.datasets[0].pointBackgroundColor = frames.map(f =>
+      f.confidence >= 0.7 ? '#ff2244' : '#ff7700'
+    );
+    _videoFrameChart.update();
+  }
+
+  // Update audio bars
+  const audio = data.audio?.[0] || data.audio_results?.[0];
+  if (audio) {
+    const rsScore = audio.rs_score || 0;
+    const echoScore = audio.echo_score || 0;
+    document.getElementById('audio-rs-bar').style.width = (rsScore * 100) + '%';
+    document.getElementById('audio-rs-val').textContent = rsScore.toFixed(2);
+    document.getElementById('audio-echo-bar').style.width = (echoScore * 100) + '%';
+    document.getElementById('audio-echo-val').textContent = echoScore.toFixed(2);
+  }
 }
 
 // ═══════════════════════════════════════════════

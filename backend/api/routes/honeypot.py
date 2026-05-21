@@ -18,32 +18,39 @@ def get_honeypot_logs(limit: int = 100, db: Session = Depends(get_db)):
     return HoneypotRepository.get_logs(db, limit)
 
 
+from pydantic import BaseModel
+
+class HoneypotLogCreate(BaseModel):
+    src_ip: str
+    port: int
+    service: str
+    payload: Optional[str] = None
+    credentials_attempted: Optional[str] = None
+    session_duration: Optional[float] = None
+    mitre_ttp: Optional[str] = None
+
 @router.post("/log")
 async def create_honeypot_log(
-    src_ip: str, port: int, service: str,
-    payload: Optional[str] = None,
-    credentials: Optional[str] = None,
-    session_duration: Optional[float] = None,
-    mitre_ttp: Optional[str] = None,
+    log: HoneypotLogCreate,
     db: Session = Depends(get_db)
 ):
     log_data = {
-        "src_ip": src_ip,
-        "port": port,
-        "service": service,
-        "payload": payload,
-        "credentials_attempted": credentials,
-        "session_duration": session_duration,
-        "mitre_ttp": mitre_ttp,
+        "src_ip": log.src_ip,
+        "port": log.port,
+        "service": log.service,
+        "payload": log.payload,
+        "credentials_attempted": log.credentials_attempted,
+        "session_duration": log.session_duration,
+        "mitre_ttp": log.mitre_ttp,
     }
     HoneypotRepository.create_log(db, log_data)
     await ws_manager.broadcast({
         "event_type": "honeypot_interaction",
-        "service": service,
-        "port": port,
-        "src_ip": src_ip,
-        "credentials": credentials,
-        "mitre_ttp": mitre_ttp,
+        "service": log.service,
+        "port": log.port,
+        "src_ip": log.src_ip,
+        "credentials": log.credentials_attempted,
+        "mitre_ttp": log.mitre_ttp,
         "timestamp": datetime.utcnow().isoformat(),
     })
     return {"status": "logged"}

@@ -213,3 +213,30 @@ def get_metrics():
         "alert_bus_queue_size": getattr(alert_bus, "_queue", None).qsize() if hasattr(alert_bus, "_queue") else 0,
         "active_ws_connections": len(ws_manager.active_connections),
     }
+
+
+# In-memory config store (persists for server lifetime)
+_config = {
+    "idps_threshold": 0.70,
+    "steg_threshold": 0.70,
+    "video_sample_rate": 30,
+    "whitelist": [],
+    "honeypot_enabled": True,
+}
+
+@router.get("/config/thresholds")
+def get_thresholds():
+    return _config
+
+@router.post("/config/thresholds")
+async def update_thresholds(body: dict):
+    for key in ("idps_threshold", "steg_threshold", "video_sample_rate", "honeypot_enabled"):
+        if key in body:
+            _config[key] = body[key]
+    if "whitelist_add" in body:
+        ip = body["whitelist_add"]
+        if ip not in _config["whitelist"]:
+            _config["whitelist"].append(ip)
+    if "whitelist_remove" in body:
+        _config["whitelist"] = [x for x in _config["whitelist"] if x != body["whitelist_remove"]]
+    return {"status": "updated", "config": _config}
