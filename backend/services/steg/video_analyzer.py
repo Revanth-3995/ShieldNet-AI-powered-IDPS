@@ -4,6 +4,7 @@ ShieldNet — Pipeline B: Video Steganalysis Engine.
 from __future__ import annotations
 
 import logging
+import os
 
 import numpy as np
 
@@ -100,11 +101,156 @@ def dct_coefficient_drift(frames: list[dict]) -> float:
 
 
 def analyze_audio_track(video_path: str) -> dict:
-    return {"rs_score": 0.1, "echo_score": 0.1, "confidence": 0.1, "channel": "unknown", "sample_range_flagged": None}
+    """
+    RS analysis + echo hiding detection on the audio track of a video file.
+    Falls back gracefully if pydub/ffmpeg not available.
+    """
+    try:
+        from pydub import AudioSegment
+        import numpy as np
+
+        audio = AudioSegment.from_file(video_path)
+        samples = np.array(audio.get_array_of_samples(), dtype=np.float32)
+
+        if len(samples) < 100:
+            return {"rs_score": 0.0, "echo_score": 0.0, "confidence": 0.0,
+                    "channel": "mono", "sample_range_flagged": None}
+
+        # --- RS Analysis on audio samples ---
+        # Treat audio samples as 1D signal; apply LSB flip and measure regularity
+        def rs_groups(s, mask):
+            flipped = s.copy()
+            flipped[mask == 1] = np.where(
+                flipped[mask == 1] % 2 == 0,
+                flipped[mask == 1] + 1,
+                flipped[mask == 1] - 1
+            )
+            orig_var = np.mean(np.abs(np.diff(s)))
+            flip_var = np.mean(np.abs(np.diff(flipped)))
+            return orig_var, flip_var
+
+        chunk = samples[:min(44100, len(samples))]  # analyze first second
+        mask = np.array([i % 2 for i in range(len(chunk))])
+        orig_var, flip_var = rs_groups(chunk, mask)
+
+        # High similarity between original and LSB-flipped variance → hidden data
+        rs_ratio = abs(orig_var - flip_var) / (orig_var + 1e-9)
+        rs_score = float(np.clip(1.0 - rs_ratio * 3, 0.0, 1.0))
+
+        # --- Echo Hiding Detection ---
+        # Look for periodic peaks in autocorrelation at typical echo delays (50–500 samples)
+        corr = np.correlate(chunk[:8000] / (np.max(np.abs(chunk[:8000])) + 1e-9),
+                            chunk[:8000] / (np.max(np.abs(chunk[:8000])) + 1e-9),
+                            mode='full')
+        half = corr[len(corr)//2:]
+        # Echo hiding produces a secondary peak at the echo delay offset
+        search_region = half[50:500]
+        main_peak = half[0]
+        secondary_max = float(np.max(search_region)) if len(search_region) > 0 else 0.0
+        echo_ratio = secondary_max / (abs(main_peak) + 1e-9)
+        echo_score = float(np.clip(echo_ratio * 2, 0.0, 1.0))
+
+        confidence = float(np.clip((rs_score * 0.6 + echo_score * 0.4), 0.0, 1.0))
+
+        sample_range = f"0–{min(44100, len(samples))}" if confidence > 0.3 else None
+
+        return {
+            "rs_score": round(rs_score, 3),
+            "echo_score": round(echo_score, 3),
+            "confidence": round(confidence, 3),
+            "channel": "stereo" if audio.channels == 2 else "mono",
+            "sample_range_flagged": sample_range,
+        }
+
+    except Exception as e:
+        # Graceful fallback — pydub/ffmpeg not available or file has no audio
+        logger.debug(f"Audio analysis unavailable: {e}")
+        return {"rs_score": 0.0, "echo_score": 0.0, "confidence": 0.0,
+                "channel": "unknown", "sample_range_flagged": None}
+
+
+# Standard MP4 box types — anything outside this set is suspicious
+_KNOWN_MP4_BOXES = {
+    b'ftyp', b'moov', b'mdat', b'free', b'skip', b'udta', b'meta',
+    b'ilst', b'trak', b'mdia', b'minf', b'stbl', b'mvhd', b'tkhd',
+    b'mdhd', b'hdlr', b'smhd', b'vmhd', b'dinf', b'stsd', b'stts',
+    b'stss', b'ctts', b'stsc', b'stsz', b'stco', b'co64', b'edts',
+    b'elst', b'url ', b'dref', b'avc1', b'mp4a', b'esds', b'btrt',
+    b'pasp', b'colr', b'clap', b'wide', b'moof', b'mfhd', b'traf',
+    b'tfhd', b'trun', b'mfra', b'tfra', b'mfro', b'styp', b'sidx',
+}
 
 
 def analyze_video_metadata(video_path: str) -> float:
-    return 0.0
+    """
+    Parse MP4 container structure for steganographic metadata anomalies.
+    Pure Python — no external libraries required.
+    Returns anomaly score 0.0–1.0.
+    """
+    if not video_path or not os.path.exists(video_path):
+        return 0.0
+
+    ext = os.path.splitext(video_path)[1].lower()
+    if ext not in ('.mp4', '.m4v', '.mov', '.m4a'):
+        return 0.0  # Only handle ISO Base Media File Format
+
+    anomalies = []
+
+    try:
+        file_size = os.path.getsize(video_path)
+        with open(video_path, 'rb') as f:
+            offset = 0
+            max_iterations = 500  # Prevent infinite loop on malformed files
+
+            for _ in range(max_iterations):
+                header = f.read(8)
+                if len(header) < 8:
+                    break
+
+                box_size = int.from_bytes(header[:4], 'big')
+                box_type = header[4:8]
+
+                if box_size == 0:
+                    break  # box extends to end of file — normal
+                if box_size < 8:
+                    anomalies.append(f"malformed_size:{box_type}")
+                    break
+
+                # Flag unknown box types
+                if box_type not in _KNOWN_MP4_BOXES:
+                    anomalies.append(f"unknown_box:{box_type.decode(errors='replace')}")
+
+                # Flag oversized free/skip padding (> 1KB is unusual)
+                if box_type in (b'free', b'skip') and box_size > 1024:
+                    anomalies.append(f"large_padding:{box_size}")
+
+                # Flag box claiming to exceed file size
+                if box_size > file_size:
+                    anomalies.append(f"oversized_box:{box_type}")
+
+                # Check udta (user data) for non-UTF8 content
+                if box_type == b'udta' and box_size < 65536:
+                    content = f.read(box_size - 8)
+                    try:
+                        content.decode('utf-8')
+                    except UnicodeDecodeError:
+                        anomalies.append("udta_non_utf8")
+                    f.seek(offset + box_size)
+                else:
+                    f.seek(offset + box_size)
+
+                offset += box_size
+
+    except Exception as e:
+        logger.debug(f"Metadata parse error: {e}")
+        return 0.0
+
+    if not anomalies:
+        return 0.0
+    elif len(anomalies) == 1:
+        return 0.60
+    else:
+        return min(0.95, 0.60 + len(anomalies) * 0.10)
 
 
 def analyze_video(video_path: str) -> dict:

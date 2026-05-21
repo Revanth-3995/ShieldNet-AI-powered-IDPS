@@ -3,7 +3,7 @@
 import sys, time, requests
 
 API = "http://127.0.0.1:8000"
-ATTACKER_IP = "198.51.100.77"
+ATTACKER_IP = "172.16.0.88"
 
 CREDENTIALS = [
     ("root","123456"),("admin","password"),("root","toor"),("admin","admin"),
