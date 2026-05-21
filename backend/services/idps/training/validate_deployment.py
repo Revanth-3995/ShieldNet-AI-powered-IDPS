@@ -38,7 +38,7 @@ def validate_system():
     from backend.services.idps.capture.flow_generator import Flow
     try:
         dummy_flow = Flow("test", "1.1.1.1", "2.2.2.2", 80, 443, "TCP")
-        from backend.services.idps.features.flow_features import FeatureExtractor
+        from backend.services.idps.features.feature_schema import FeatureExtractor
         features = FeatureExtractor.extract_all(dummy_flow)
         if features:
             logger.info("OK: Feature extraction working.")

@@ -6,7 +6,7 @@ import pytest
 import asyncio
 import numpy as np
 from backend.services.idps.capture.flow_generator import Flow
-from backend.services.idps.features.flow_features import FeatureExtractor
+from backend.services.idps.features.feature_schema import FeatureExtractor
 from backend.services.idps.detection.rule_engine import RuleEngine
 
 def test_flow_accumulation():

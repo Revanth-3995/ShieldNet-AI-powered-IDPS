@@ -54,7 +54,7 @@ Traffic In (Scapy / Proxy)
          │
          ▼
 ┌───────────────────┐
-│  flow_features    │  Extracts 42+ features (entropy, IAT, volume, ratios)
+│  feature_schema    │  Extracts 42+ features (entropy, IAT, volume, ratios)
 └────────┬──────────┘
          │
     ┌────┴─────────────────────────┐

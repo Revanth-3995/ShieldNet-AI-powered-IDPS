@@ -4,7 +4,7 @@ Helps convert captured flows or datasets (CICIDS) into XGBoost-ready formats.
 """
 import pandas as pd
 from typing import List, Dict, Any
-from backend.services.idps.features.flow_features import FeatureExtractor
+from backend.services.idps.features.feature_schema import FeatureExtractor
 
 def flows_to_dataframe(flows: List[Any]) -> pd.DataFrame:
     """Convert a list of Flow objects to a pandas DataFrame for training/analysis."""
