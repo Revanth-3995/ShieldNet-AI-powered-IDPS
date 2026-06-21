@@ -47,15 +47,16 @@ def post_steg_event(source_ip: str, media_type: str, confidence: float, algorith
 
 
 def post_honeypot_event(source_ip: str, port: int, service: str, credentials: str = None, payload: str = None, mitre_ttp: str = None):
-    params = {"src_ip": source_ip, "port": port, "service": service}
-    if credentials:
-        params["credentials"] = credentials
-    if payload:
-        params["payload"] = payload
-    if mitre_ttp:
-        params["mitre_ttp"] = mitre_ttp
+    data = {
+        "src_ip": source_ip,
+        "port": port,
+        "service": service,
+        "credentials_attempted": credentials,
+        "payload": payload,
+        "mitre_ttp": mitre_ttp,
+    }
     try:
-        r = requests.post(f"{API_BASE}/api/honeypot/log", params=params, timeout=5)
+        r = requests.post(f"{API_BASE}/api/honeypot/log", json=data, timeout=5)
         logger.info(f"HONEYPOT {service}:{port} from {source_ip}: {r.status_code}")
     except Exception as e:
         logger.error(f"POST failed: {e}")

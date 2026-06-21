@@ -78,14 +78,23 @@ def _mock_image_analysis(seed: str = "") -> dict:
 
 
 def analyze_image_bytes(content: bytes, filename: str = "image") -> dict:
-    """Analyze image bytes using steg algorithms."""
+    """Analyze image bytes using steg algorithms and CNN classifier."""
     if STEG_ALG_AVAILABLE:
         try:
             from PIL import Image
             img = Image.open(io.BytesIO(content)).convert("RGB")
             img_array = np.array(img)
-            result = analyze_image(img_array)
-            result["payload_estimate"] = estimate_payload(img_array, result.get("confidence", 0))
+            stat_scores = analyze_image(img_array)
+            
+            # Fuse with CNN classifier
+            from backend.services.steg.cnn.cnn_classifier import classify_image
+            cnn_result = classify_image(img_array, stat_scores)
+            
+            result = stat_scores.copy()
+            result["confidence"] = cnn_result.get("confidence", stat_scores.get("confidence", 0.0))
+            result["algorithm_detected"] = cnn_result.get("algorithm_detected", stat_scores.get("algorithm_detected"))
+            result["method"] = cnn_result.get("method", "statistical_only")
+            result["payload_estimate"] = estimate_payload(img_array, result["confidence"])
             return result
         except Exception as e:
             logger.warning(f"Image analysis error: {e}")

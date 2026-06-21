@@ -798,6 +798,25 @@
   .text-purple { color: var(--accent-purple); }
   .text-mono { font-family: 'JetBrains Mono', monospace; }
   .font-bold { font-weight: 700; }
+
+  /* Custom loader/spinner for steg analysis */
+  .loader {
+    border: 3px solid rgba(0,212,255,0.1);
+    border-radius: 50%;
+    border-top: 3px solid var(--accent-cyan);
+    width: 28px;
+    height: 28px;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  #steg-drop-zone.dragover {
+    border-color: var(--accent-cyan) !important;
+    background: rgba(0, 212, 255, 0.05) !important;
+    box-shadow: 0 0 12px rgba(0, 212, 255, 0.15) inset;
+  }
 </style>
 </head>
 <body>
@@ -1030,6 +1049,93 @@
     <div class="stat-card">
       <div class="stat-value text-cyan" id="img-top-algo">—</div>
       <div class="stat-label">Top Algorithm</div>
+    </div>
+  </div>
+
+  <!-- Live Steganography Analysis Dashboard -->
+  <div class="grid-2" style="margin-top:20px; margin-bottom:20px">
+    <!-- Upload Panel -->
+    <div class="panel" style="display:flex; flex-direction:column; justify-content:space-between">
+      <div class="panel-header">
+        <span class="panel-title">🔍 Live Image Steganalysis</span>
+        <span class="panel-badge badge-live">REAL-TIME</span>
+      </div>
+      <div class="panel-body" style="flex:1; display:flex; flex-direction:column; justify-content:center">
+        <div id="steg-drop-zone" style="border:2px dashed var(--border); border-radius:8px; padding:30px 20px; text-align:center; cursor:pointer; background:var(--bg-2); transition:all 0.3s ease; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px">
+          <span style="font-size:36px">🖼️</span>
+          <div style="font-size:13px; color:var(--text-primary); font-weight:600">Drag & drop your image here</div>
+          <div style="font-size:11px; color:var(--text-muted)">Supports PNG, JPG, JPEG, BMP (Max 10MB)</div>
+          <div style="font-size:12px; color:var(--accent-cyan); font-weight:600; margin-top:5px; text-decoration:underline">or click to browse</div>
+          <input type="file" id="steg-file-input" accept="image/*" style="display:none">
+        </div>
+        
+        <div id="steg-selected-file-container" style="display:none; margin-top:12px; background:var(--bg-3); border:1px solid var(--border); border-radius:6px; padding:10px; align-items:center; justify-content:space-between">
+          <div style="display:flex; align-items:center; gap:8px; overflow:hidden">
+            <span style="font-size:20px">📄</span>
+            <div style="overflow:hidden">
+              <div id="steg-file-name" style="font-size:12px; color:var(--text-primary); font-weight:600; white-space:nowrap; text-overflow:ellipsis">image.png</div>
+              <div id="steg-file-size" style="font-size:10px; color:var(--text-muted)">124 KB</div>
+            </div>
+          </div>
+          <button class="btn btn-cyan" id="steg-analyze-btn" style="padding:6px 12px; font-size:11px">Analyze Image</button>
+        </div>
+        
+        <div id="steg-loader" style="display:none; text-align:center; padding:30px 10px">
+          <div class="loader" style="margin:0 auto 12px"></div>
+          <div style="font-size:12px; color:var(--text-secondary)">Running 7 statistical steganalysis models...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Results Panel -->
+    <div class="panel" id="steg-results-panel">
+      <div class="panel-header">
+        <span class="panel-title">📊 Analysis Report</span>
+        <span class="panel-badge" id="steg-status-badge" style="background:var(--bg-3)">NO FILE</span>
+      </div>
+      <div class="panel-body" style="display:flex; flex-direction:column; justify-content:center; min-height:180px">
+        <div id="steg-empty-results" style="text-align:center; color:var(--text-muted); font-size:12px; padding:40px 10px">
+          Upload and analyze an image to view pixel-level steganalysis diagnostics.
+        </div>
+        <div id="steg-results-content" style="display:none">
+          <!-- Verdict -->
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
+            <span style="font-size:12px; color:var(--text-muted)">Security Verdict:</span>
+            <span id="steg-result-verdict" style="font-size:13px; font-weight:bold; letter-spacing:0.5px">CLEAN</span>
+          </div>
+          
+          <!-- Confidence Bar -->
+          <div style="margin-bottom:14px">
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; margin-bottom:4px">
+              <span style="color:var(--text-muted)">Steg Confidence Score:</span>
+              <span id="steg-result-confidence" style="font-weight:600; color:var(--text-primary)">0%</span>
+            </div>
+            <div style="background:var(--bg-3); border-radius:4px; height:10px; overflow:hidden">
+              <div id="steg-confidence-progress" style="height:100%; width:0%; transition:width 0.5s ease; background:var(--accent-green)"></div>
+            </div>
+          </div>
+          
+          <!-- Payload & Algorithm -->
+          <div class="grid-2" style="background:var(--bg-3); border-radius:6px; padding:10px; margin-bottom:14px; gap:8px">
+            <div>
+              <div style="font-size:10px; color:var(--text-muted)">Hidden Payload Estimate:</div>
+              <div id="steg-result-payload" style="font-size:12px; font-weight:600; color:var(--accent-cyan); margin-top:2px">—</div>
+            </div>
+            <div>
+              <div style="font-size:10px; color:var(--text-muted)">Dominant Alg Signature:</div>
+              <div id="steg-result-algorithm" style="font-size:12px; font-weight:600; color:var(--accent-purple); margin-top:2px">—</div>
+            </div>
+          </div>
+          
+          <!-- Algorithm Breakdown -->
+          <div>
+            <div style="font-size:11px; color:var(--text-secondary); font-weight:600; margin-bottom:8px">Statistical Algorithm Breakdown</div>
+            <div style="display:grid; gap:6px; max-height:110px; overflow-y:auto; padding-right:4px" id="steg-algo-bars">
+              <!-- Mini bars injected here -->
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1340,7 +1446,28 @@
       </div>
     </div>
   </div>
-</div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- REAL NETWORK SENSORS PANEL                  -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div style="margin-top:20px">
+    <div class="panel">
+      <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center">
+        <span class="panel-title">🛡 Real Network Sensors</span>
+        <button class="btn btn-cyan" style="padding:4px 12px;font-size:11px" onclick="loadSensorStatus()">↻ Refresh</button>
+      </div>
+      <div class="panel-body">
+        <div style="color:var(--text-muted);font-size:11px;margin-bottom:12px">
+          These sensors detect <strong style="color:var(--accent-cyan)">real network attacks</strong> — not simulations.
+          Start any sensor in a new terminal window.
+        </div>
+        <div id="sensors-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">
+          <!-- Filled by loadSensorStatus() -->
+          <div class="no-data">Loading sensor status…</div>
+        </div>
+      </div>
+    </div>
+  </div>
 
 </div><!-- end .main -->
 
@@ -1348,7 +1475,9 @@
 // ═══════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════
-const API = 'http://127.0.0.1:8000';
+// Auto-detect backend host — works on localhost AND across LAN (demo from another laptop)
+const _host = window.location.hostname || '127.0.0.1';
+const API = `http://${_host}:8000`;
 // Counter animation utility
 function animateCounter(element, targetValue, duration = 300) {
   const startValue = parseInt(element.textContent.replace(/,/g, '')) || 0;
@@ -1472,7 +1601,7 @@ function switchView(name) {
   if (name === 'video-steg') { loadVideoFeed(); }
   if (name === 'timeline') loadAllIPs();
   if (name === 'forensics') loadForensicList();
-  if (name === 'control') { loadBlockedIPs(); loadWatchEndpoints(); checkHealth(); }
+  if (name === 'control') { loadBlockedIPs(); loadWatchEndpoints(); checkHealth(); loadSensorStatus(); }
   if (name === 'honeypot') loadHoneypot();
 }
 
@@ -1480,7 +1609,7 @@ function switchView(name) {
 // WEBSOCKET
 // ═══════════════════════════════════════════════
 function connectWS() {
-  const ws = new WebSocket('ws://127.0.0.1:8000/ws/live');
+  const ws = new WebSocket(`ws://${_host}:8000/ws/live`);
   state.ws = ws;
 
   ws.onopen = () => {
@@ -1554,6 +1683,7 @@ function handleWSEvent(ev) {
   } else if (type === 'ip_blocked') {
     showToast('IP Blocked', ev.ip + ' blocked by ' + (ev.blocked_by||'system'), 'high');
     loadBlockedIPs();
+    refreshStats();
 
   } else if (type === 'cross_pipeline_escalation') {
     showToast('Cross-Pipeline Alert', ev.message, 'info');
@@ -1593,15 +1723,32 @@ function prependEvent(feedId, inc, badge) {
 // STATS REFRESH
 // ═══════════════════════════════════════════════
 async function refreshStats() {
-  const networkAttacks = state.incidents.filter(i=>i.pipeline_primary==='idps').length;
-  const stegDetections = state.incidents.filter(i=>i.pipeline_primary==='steg').length;
+  // Fetch live stats from backend so counters stay accurate
+  const apiStats = await apiGet('/api/stats');
+  if (apiStats) {
+    state.stats = apiStats;
+  }
+
+  const networkAttacks = state.stats.total_network_attacks
+    || state.incidents.filter(i=>i.pipeline_primary==='idps').length;
+  const stegDetections = state.stats.total_steg_detections
+    || state.incidents.filter(i=>i.pipeline_primary==='steg').length;
   const blockedIPs = state.stats.total_blocked_ips || 0;
   const correlatedIncidents = state.stats.total_correlated_incidents || 0;
-  
+  const honeypotInteractions = state.stats.total_honeypot_interactions || 0;
+
   updateMetricCard('h-attacks', networkAttacks, _lastHourBaselines.networkAttacks);
   updateMetricCard('h-steg', stegDetections, _lastHourBaselines.stegDetections);
   updateMetricCard('h-blocked', blockedIPs, _lastHourBaselines.blockedIPs);
   updateMetricCard('h-corr', correlatedIncidents, _lastHourBaselines.correlatedIncidents);
+
+  // Update honeypot header counter (was never updated before)
+  const honeyEl = document.getElementById('h-honey');
+  if (honeyEl) animateCounter(honeyEl, honeypotInteractions);
+
+  // Also keep net-blocked in sync
+  const netBlockedEl = document.getElementById('net-blocked');
+  if (netBlockedEl) netBlockedEl.textContent = blockedIPs;
 }
 
 function updateNetStats() {
@@ -1711,24 +1858,33 @@ function initCharts() {
   });
 
   // Video charts
-  charts.vidFrames = new Chart(document.getElementById('chart-vid-frames'), {
-    type: 'line',
-    data: { labels:[], datasets:[{label:'Frame Confidence', data:[], borderColor:'var(--accent-orange)', backgroundColor:'rgba(255,119,0,0.1)', borderWidth:2, fill:true, tension:0.3, pointRadius:2}] },
-    options: { ...CHART_DEFAULTS, scales: darkScales(), maintainAspectRatio:false }
-  });
+  const elVidFrames = document.getElementById('chart-vid-frames');
+  if (elVidFrames) {
+    charts.vidFrames = new Chart(elVidFrames, {
+      type: 'line',
+      data: { labels:[], datasets:[{label:'Frame Confidence', data:[], borderColor:'var(--accent-orange)', backgroundColor:'rgba(255,119,0,0.1)', borderWidth:2, fill:true, tension:0.3, pointRadius:2}] },
+      options: { ...CHART_DEFAULTS, scales: darkScales(), maintainAspectRatio:false }
+    });
+  }
 
-  charts.vidMethods = new Chart(document.getElementById('chart-vid-methods'), {
-    type: 'doughnut',
-    data: { labels:[], datasets:[{data:[], backgroundColor:['#ff7700','#ff2244','#a855f7','#00d4ff','#00ff88'], borderWidth:0}] },
-    options: { ...CHART_DEFAULTS, cutout:'55%', maintainAspectRatio:false }
-  });
+  const elVidMethods = document.getElementById('chart-vid-methods');
+  if (elVidMethods) {
+    charts.vidMethods = new Chart(elVidMethods, {
+      type: 'doughnut',
+      data: { labels:[], datasets:[{data:[], backgroundColor:['#ff7700','#ff2244','#a855f7','#00d4ff','#00ff88'], borderWidth:0}] },
+      options: { ...CHART_DEFAULTS, cutout:'55%', maintainAspectRatio:false }
+    });
+  }
 
   // Honeypot services
-  charts.hpServices = new Chart(document.getElementById('chart-hp-services'), {
-    type: 'doughnut',
-    data: { labels:['SSH','HTTP','FTP','Telnet'], datasets:[{data:[0,0,0,0], backgroundColor:['#ff2244','#3b82f6','#ffd600','#a855f7'], borderWidth:0}] },
-    options: { ...CHART_DEFAULTS, cutout:'55%', maintainAspectRatio:false }
-  });
+  const elHpServices = document.getElementById('chart-hp-services');
+  if (elHpServices) {
+    charts.hpServices = new Chart(elHpServices, {
+      type: 'doughnut',
+      data: { labels:['SSH','HTTP','FTP','Telnet'], datasets:[{data:[0,0,0,0], backgroundColor:['#ff2244','#3b82f6','#ffd600','#a855f7'], borderWidth:0}] },
+      options: { ...CHART_DEFAULTS, cutout:'55%', maintainAspectRatio:false }
+    });
+  }
 }
 
 function updateCharts() {
@@ -1786,9 +1942,11 @@ function updateCharts() {
     const a = i.attack_type || 'unknown';
     vidAlgo[a] = (vidAlgo[a]||0)+1;
   });
-  charts.vidMethods.data.labels = Object.keys(vidAlgo);
-  charts.vidMethods.data.datasets[0].data = Object.values(vidAlgo);
-  charts.vidMethods.update('none');
+  if (charts.vidMethods) {
+    charts.vidMethods.data.labels = Object.keys(vidAlgo);
+    charts.vidMethods.data.datasets[0].data = Object.values(vidAlgo);
+    charts.vidMethods.update('none');
+  }
 
   // Top algo for image panel
   if (Object.keys(algoCounts).length > 0) {
@@ -2057,7 +2215,7 @@ async function loadForensicList() {
 }
 
 async function loadForensicDetail(incidentId) {
-  const data = await apiGet(`/api/forensics/${incidentId}`);
+  const data = await apiGet(`/api/steg/forensics/${incidentId}`);
   if (!data) return;
 
   document.getElementById('forensic-detail').style.display = 'block';
@@ -2191,10 +2349,22 @@ async function simulate(type) {
   showToast('Simulation', `Running: ${type.replace(/_/g,' ')}`, 'info');
   await apiPost('/api/simulate', { attack: type });
 
-  // Helper: honeypot uses query params
+  // Helper: honeypot uses JSON body
   function postHoneypot(src_ip, port, service, opts={}) {
-    const params = new URLSearchParams({ src_ip, port, service, ...opts });
-    return fetch(`${API}/api/honeypot/log?${params}`, { method: 'POST' }).catch(()=>{});
+    const data = {
+      src_ip: src_ip,
+      port: parseInt(port),
+      service: service,
+      payload: opts.payload || null,
+      credentials_attempted: opts.credentials || null,
+      session_duration: opts.session_duration || 0.5,
+      mitre_ttp: opts.mitre_ttp || null
+    };
+    return fetch(`${API}/api/honeypot/log`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).catch(()=>{});
   }
 
   // Fallback: direct simulation via idps/steg/honeypot endpoints
@@ -2220,7 +2390,36 @@ async function simulate(type) {
       await postHoneypot(ip, 80, 'http', { payload: "GET /search?q=' OR 1=1-- HTTP/1.1", mitre_ttp: 'T1190' });
     },
     steg_image: () => apiPost('/api/steg/event', { source_ip: randIP(), media_type: 'image', confidence: +(0.7+Math.random()*0.25).toFixed(3), filename: `photo_${Math.random().toFixed(4).slice(2)}.jpg`, file_size: 250000, algorithm_detected: 'LSB-Spatial', payload_estimate: 15000, forensic_data: { chi_square: 0.81, rs_analysis: 0.75, dct_histogram: 0.65, sample_pair: 0.72, pixel_histogram: 0.55, noise_residual: 0.60, benford_law: 0.58 }, frame_results: [], audio_results: [] }),
-    steg_video: () => apiPost('/api/steg/event', { source_ip: randIP(), media_type: 'video', confidence: +(0.78+Math.random()*0.18).toFixed(3), filename: `video_${Math.random().toFixed(4).slice(2)}.mp4`, file_size: 4200000, algorithm_detected: 'LSB-VideoFrames', payload_estimate: 85000, frame_count: 15, forensic_data: { temporal: { inter_frame_lsb_consistency: 0.72, dct_coefficient_drift: 0.61 } }, frame_results: Array.from({length:15},(_,i) => ({ frame_number: i*30, timestamp_ms: i*1200, confidence: +(0.3+Math.random()*0.6).toFixed(3), chi_square: +(Math.random()*0.9).toFixed(3), rs_score: +(Math.random()*0.8).toFixed(3), dct_score: +(Math.random()*0.8).toFixed(3), anomaly_type: 'LSB-VideoFrames' })), audio_results: [{ channel: 'stereo', rs_score: 0.68, echo_score: 0.71, confidence: 0.74, sample_range_flagged: '0-44100' }] }),
+    steg_video: () => {
+      const fr = Array.from({length:15}, (_,i) => {
+        const conf = +(0.3+Math.random()*0.6).toFixed(3);
+        return {
+          frame_idx: i,
+          timestamp_ms: i * 1200.0,
+          confidence: conf,
+          is_suspicious: conf >= 0.6,
+          algorithm_detected: 'LSB-VideoFrames',
+          forensic_data: {
+            chi_square: +(Math.random()*0.9).toFixed(3),
+            rs_score: +(Math.random()*0.8).toFixed(3),
+            dct_score: +(Math.random()*0.8).toFixed(3)
+          }
+        };
+      });
+      return apiPost('/api/steg/event', {
+        source_ip: randIP(),
+        media_type: 'video',
+        confidence: +(0.78+Math.random()*0.18).toFixed(3),
+        filename: `video_${Math.random().toFixed(4).slice(2)}.mp4`,
+        file_size: 4200000,
+        algorithm_detected: 'LSB-VideoFrames',
+        payload_estimate: 85000,
+        frame_count: 15,
+        forensic_data: { chi_square: 0.72, rs_analysis: 0.61 },
+        frame_results: fr,
+        audio_results: [{ channel: 'stereo', rs_score: 0.68, echo_score: 0.71, confidence: 0.74, sample_range_flagged: '0-44100' }]
+      });
+    },
     apt_full: async () => {
       const ip = '192.168.1.47';
       await apiPost('/api/idps/event', { source_ip: ip, attack_type: 'PortScan', confidence: 0.94, rule_triggered: 'PortSweep' });
@@ -2416,7 +2615,72 @@ async function checkHealth() {
 }
 
 // ═══════════════════════════════════════════════
+// REAL NETWORK SENSORS STATUS
+// ═══════════════════════════════════════════════
+async function loadSensorStatus() {
+  const data = await apiGet('/api/sensors/status');
+  const grid = document.getElementById('sensors-grid');
+  if (!grid) return;
+  if (!data) {
+    grid.innerHTML = '<div class="no-data">Could not fetch sensor status.</div>';
+    return;
+  }
+
+  const icons = { pcap: '📡', mitmproxy: '🔀', suricata: '🦁' };
+  const runCmds = {
+    pcap:      'python -m backend.sensors.pcap_sensor',
+    mitmproxy: 'python -m backend.sensors.mitmproxy_addon',
+    suricata:  'python -m backend.sensors.suricata_sensor',
+  };
+
+  grid.innerHTML = Object.entries(data).map(([key, s]) => {
+    const active = s.active;
+    const statusLabel = active ? '● LIVE' : '○ OFFLINE';
+    const statusColor = active ? 'var(--accent-green)' : 'var(--text-muted)';
+    const borderColor = active ? 'var(--border-glow)' : 'var(--border)';
+    const glowStyle = active ? 'box-shadow:0 0 12px rgba(0,255,136,0.08)' : '';
+
+    let statsHtml = '';
+    if (key === 'pcap' && active)
+      statsHtml = `<div style="color:var(--text-muted);font-size:10px">Packets: ${s.packets_seen||0} &nbsp;|&nbsp; Alerts: ${s.alerts_sent||0}</div>`;
+    if (key === 'mitmproxy' && active)
+      statsHtml = `<div style="color:var(--text-muted);font-size:10px">Requests: ${s.requests_seen||0} &nbsp;|&nbsp; Alerts: ${s.alerts_sent||0}</div>`;
+    if (key === 'suricata' && active)
+      statsHtml = `<div style="color:var(--text-muted);font-size:10px">Alerts forwarded: ${s.alerts_forwarded||0}</div>`;
+
+    const offlineHtml = `
+      <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px">
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">▶ Start this sensor:</div>
+        <code style="display:block;font-size:10px;background:var(--bg-3);border:1px solid var(--border);
+                     border-radius:4px;padding:6px 8px;color:var(--accent-cyan);word-break:break-all"
+        >${runCmds[key]||''}</code>
+        ${s.requires ? `<div style="font-size:10px;color:var(--accent-yellow);margin-top:4px">⚠ Requires: ${s.requires}</div>` : ''}
+      </div>`;
+
+    const onlineHtml = `
+      <div style="margin-top:8px;font-size:10px;color:var(--text-muted)">
+        Last heartbeat: ${s.last_heartbeat ? fmt(s.last_heartbeat) : '—'}
+      </div>`;
+
+    return `
+      <div style="background:var(--bg-2);border:1px solid ${borderColor};border-radius:8px;padding:14px;${glowStyle}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div>
+            <span style="font-size:18px">${icons[key]||'🔌'}</span>
+            <span style="font-size:13px;font-weight:600;color:var(--text-primary);margin-left:6px">${s.name||key}</span>
+          </div>
+          <span style="font-size:11px;font-family:JetBrains Mono,monospace;color:${statusColor};font-weight:600">${statusLabel}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px;line-height:1.5">${s.description||''}</div>
+        ${statsHtml}
+        ${active ? onlineHtml : offlineHtml}
+      </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════
 // INITIAL DATA LOAD
+
 // ═══════════════════════════════════════════════
 async function loadInitialData() {
   const [incs, honeypot] = await Promise.all([
@@ -2576,8 +2840,9 @@ async function loadVideoFrames(incidentId) {
   const data = await apiGet(`/api/steg/forensics/${incidentId}`);
   if (!data) return;
 
-  document.getElementById('vid-selected-label').textContent =
-    `Showing: ${data.steg_scan?.filename || 'video'} — ${data.video_frames?.length || 0} frames`;
+  const _vfFilename = data.filename || data.steg_scan?.filename || 'video';
+  const _vfFrameCount = data.frame_count || (data.video_frames || data.frame_results || []).length || 0;
+  document.getElementById('vid-selected-label').textContent = `Showing: ${_vfFilename} — ${_vfFrameCount} frames`;
 
   const frames = data.video_frames || data.frame_results || [];
   if (_videoFrameChart) {
@@ -2601,6 +2866,177 @@ async function loadVideoFrames(incidentId) {
     document.getElementById('audio-echo-val').textContent = echoScore.toFixed(2);
   }
 }
+
+// ═══════════════════════════════════════════════
+// IMAGE STEGANOGRAPHY UPLOAD AND ANALYSIS
+// ═══════════════════════════════════════════════
+(function() {
+  const dropZone = document.getElementById('steg-drop-zone');
+  const fileInput = document.getElementById('steg-file-input');
+  const fileContainer = document.getElementById('steg-selected-file-container');
+  const fileName = document.getElementById('steg-file-name');
+  const fileSize = document.getElementById('steg-file-size');
+  const analyzeBtn = document.getElementById('steg-analyze-btn');
+  const loader = document.getElementById('steg-loader');
+  const emptyResults = document.getElementById('steg-empty-results');
+  const resultsContent = document.getElementById('steg-results-content');
+  
+  const statusBadge = document.getElementById('steg-status-badge');
+  const verdict = document.getElementById('steg-result-verdict');
+  const confidenceText = document.getElementById('steg-result-confidence');
+  const confidenceProgress = document.getElementById('steg-confidence-progress');
+  const payloadText = document.getElementById('steg-result-payload');
+  const algorithmText = document.getElementById('steg-result-algorithm');
+  const algoBars = document.getElementById('steg-algo-bars');
+
+  let selectedFile = null;
+
+  if (!dropZone) return;
+
+  // Click to browse
+  dropZone.addEventListener('click', () => fileInput.click());
+
+  // Drag over effects
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('dragover');
+  });
+
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('dragover');
+  });
+
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length > 0) {
+      handleFileSelect(e.dataTransfer.files[0]);
+    }
+  });
+
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+      handleFileSelect(e.target.files[0]);
+    }
+  });
+
+  function handleFileSelect(file) {
+    if (!file.type.startsWith('image/')) {
+      showToast('Steganalysis Error', 'Please select a valid image file.', 'critical');
+      return;
+    }
+    selectedFile = file;
+    fileName.textContent = file.name;
+    fileSize.textContent = formatBytes(file.size);
+    fileContainer.style.display = 'flex';
+  }
+
+  function formatBytes(bytes, decimals = 2) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  }
+
+  analyzeBtn.addEventListener('click', async () => {
+    if (!selectedFile) return;
+
+    // Show loading
+    dropZone.style.display = 'none';
+    fileContainer.style.display = 'none';
+    loader.style.display = 'block';
+    emptyResults.style.display = 'none';
+    resultsContent.style.display = 'none';
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    try {
+      const response = await fetch(`${API}/api/steg/upload`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error('Analysis request failed');
+      }
+
+      const data = await response.json();
+      renderStegReport(data);
+      showToast('Steganalysis Complete', 'Image analysis has completed successfully.', 'info');
+    } catch (e) {
+      showToast('Steganalysis Error', 'Failed to analyze image: ' + e.message, 'critical');
+      emptyResults.style.display = 'block';
+    } finally {
+      loader.style.display = 'none';
+      dropZone.style.display = 'flex';
+      fileContainer.style.display = 'none';
+      selectedFile = null;
+      fileInput.value = '';
+    }
+  });
+
+  function renderStegReport(data) {
+    const isSteg = data.is_steganographic;
+    const conf = data.confidence;
+    
+    // Update Badge & Verdict
+    statusBadge.textContent = isSteg ? '● THREAT' : '● CLEAN';
+    statusBadge.style.background = isSteg ? 'rgba(255,34,68,0.2)' : 'rgba(0,255,136,0.2)';
+    statusBadge.style.color = isSteg ? 'var(--accent-red)' : 'var(--accent-green)';
+    
+    verdict.textContent = isSteg ? 'STEGANOGRAPHY DETECTED' : 'CLEAN / SECURE';
+    verdict.style.color = isSteg ? 'var(--accent-red)' : 'var(--accent-green)';
+    
+    // Confidence text and progress bar
+    confidenceText.textContent = (conf * 100).toFixed(1) + '%';
+    confidenceProgress.style.width = (conf * 100) + '%';
+    confidenceProgress.style.background = isSteg ? 'var(--accent-red)' : 'var(--accent-green)';
+    
+    // Estimated Payload & Algorithm
+    payloadText.textContent = data.payload_estimate_bytes > 0 
+      ? formatBytes(data.payload_estimate_bytes) 
+      : '0 Bytes';
+    algorithmText.textContent = data.algorithm_detected 
+      ? data.algorithm_detected.replace('_', ' ').toUpperCase() 
+      : 'NONE';
+
+    // Algo breakdown
+    const friendlyNames = {
+      chi_square: 'Chi-Square PoV Analysis',
+      sample_pair: 'Sample Pair Analysis',
+      rs_analysis: 'RS Steganalysis Method',
+      dct_histogram: 'DCT Coefficient Histogram',
+      pixel_histogram: 'Pixel Value Distribution',
+      noise_residual: 'Entropy Noise Residual',
+      benford_law: "Benford's Law Fitting"
+    };
+
+    if (data.scores) {
+      algoBars.innerHTML = Object.entries(data.scores).map(([key, score]) => {
+        const name = friendlyNames[key] || key;
+        const color = score >= 0.70 ? 'var(--accent-red)' : score >= 0.40 ? 'var(--accent-orange)' : 'var(--accent-green)';
+        return `
+          <div>
+            <div style="display:flex; justify-content:space-between; font-size:10px; color:var(--text-muted); margin-bottom:2px">
+              <span>${name}</span>
+              <span>${(score * 100).toFixed(0)}%</span>
+            </div>
+            <div style="background:var(--bg-1); border-radius:3px; height:6px; overflow:hidden">
+              <div style="height:100%; width:${score * 100}%; background:${color}; transition:width 0.5s ease"></div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    } else {
+      algoBars.innerHTML = '<div style="font-size:10px; color:var(--text-muted)">Breakdown unavailable</div>';
+    }
+
+    resultsContent.style.display = 'block';
+  }
+})();
 
 // ═══════════════════════════════════════════════
 // BOOT

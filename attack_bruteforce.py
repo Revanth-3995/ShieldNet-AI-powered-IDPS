@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """ShieldNet Demo — SSH Brute Force Simulation. Run: python attack_bruteforce.py"""
-import sys, time, requests
+import sys, time, requests, argparse
 
-API = "http://127.0.0.1:8000"
 ATTACKER_IP = "198.51.100.77"
 
 CREDENTIALS = [
@@ -57,4 +56,10 @@ def main():
     print(f"    → Source IP {ATTACKER_IP} should now be auto-blocked.\n")
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="ShieldNet SSH Brute Force Demo")
+    parser.add_argument("--api", default="http://127.0.0.1:8000",
+                        help="ShieldNet backend URL (e.g. http://192.168.1.50:8000)")
+    args = parser.parse_args()
+    API = args.api
+    print(f"[ShieldNet] Targeting backend: {API}")
     main()

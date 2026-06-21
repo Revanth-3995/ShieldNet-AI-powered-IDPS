@@ -66,15 +66,20 @@ def _try_load_model() -> bool:
 
 def _statistical_fallback(statistical_scores: dict) -> dict:
     """Average of all 7 algorithm scores when CNN is unavailable."""
-    if not statistical_scores:
+    # Filter to numeric scores only (exclude algorithm_detected, confidence, mock keys)
+    _NUMERIC_SCORE_KEYS = {"chi_square", "sample_pair", "rs_analysis",
+                           "dct_histogram", "pixel_histogram", "noise_residual", "benford_law"}
+    numeric = {k: v for k, v in statistical_scores.items()
+                if k in _NUMERIC_SCORE_KEYS and isinstance(v, (int, float))}
+    if not numeric:
         return {"confidence": 0.5, "is_steganographic": False,
                 "algorithm_detected": "statistical_only", "method": "fallback"}
-    vals = list(statistical_scores.values())
+    vals = list(numeric.values())
     confidence = float(np.mean(vals))
-    top_algo = max(statistical_scores, key=statistical_scores.get)
+    top_algo = max(numeric, key=numeric.get)
     return {
         "confidence": round(confidence, 4),
-        "is_steganographic": confidence >= 0.70,
+        "is_steganographic": confidence >= 0.45,  # Threshold adjusted based on algorithm testing
         "algorithm_detected": top_algo,
         "method": "statistical_fallback",
     }
