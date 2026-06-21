@@ -1,7 +1,7 @@
 # ShieldNet Project Status Report — May 2026
 
 ## 1. Executive Summary
-The ShieldNet AI-Powered IDPS has achieved 100% completion of its primary and secondary project pipelines, finalizing its transition into a **fully deployment-ready unified behavioral detection and steganalysis platform**. All critical startup blockers have been resolved, and the core ML infrastructure has been optimized for real-time performance and SOC-grade explainability.
+The ShieldNet AI-Powered IDPS has completed its core engineering integration, bringing deterministic heuristics, classical ML, and deep-learning neural models together into a unified pipeline. With the successful training of both the temporal BiLSTM and the steganography CNN, the system is fully operational for evaluation, demo, and pilot-scale testing, with subsequent tuning recommended for production environments.
 
 ---
 
@@ -16,7 +16,7 @@ The ShieldNet AI-Powered IDPS has achieved 100% completion of its primary and se
 - **Feature Extraction**: Complete 42-feature schema including `payload_entropy` and `dst_port_type_encoded`.
 - **Ensemble Fusion**: XGBoost behavioral modeling + BiLSTM sequence modeling.
 - **Explainable AI (XAI)**: SHAP-powered forensic JSON output with KernelExplainer for critical Steg classification and human-readable TreeExplainer logic for network alerts.
-- **Rule Engine**: 8 stateful deterministic detection rules utilizing `deque` sliding windows across high-volume rates, floods, and brute-force behaviors.
+- **Rule Engine**: 7 stateful deterministic detection rules utilizing `deque` sliding windows across high-volume rates, floods, and brute-force behaviors.
 
 
 ### D. Steganalysis (Pipeline B - Complete)
@@ -40,8 +40,8 @@ The ShieldNet AI-Powered IDPS has achieved 100% completion of its primary and se
 
 ## 4. Proposed Future Enhancements
 
-### Phase 1: Training & Weights
-- **Immediate Task**: Execute the training script on the **CICIDS2017** dataset to generate the `idps_model.pkl` weights. This will activate the "Behavioral" and "Temporal" AI layers.
+### Phase 1: Model Tuning & Organic Training
+- **Organic Traffic Alignment**: While the BiLSTM and CNN models are successfully trained and weights saved, they are currently trained on synthetic/generated sets. Fine-tuning on a live mirror of production-level organic traffic is recommended.
 
 ### Phase 2: Detection Breadth
 - **Protocol Expansion**: Add support for industrial protocols (Modbus, BACnet) to allow for Industrial Control System (ICS) monitoring.
@@ -54,4 +54,4 @@ The ShieldNet AI-Powered IDPS has achieved 100% completion of its primary and se
 ---
 
 ## 5. Conclusion
-The project is currently in its **Final Pre-Deployment Stage**. It is perfectly suited for a live demonstration of automated threat detection and response. The transition to a full production environment primarily requires dataset-driven training to unlock the full potential of the behavioral AI engines.
+The project is currently in a functional demonstration state. It is perfectly suited for live walkthroughs of automated threat detection and response. Transitioning to full enterprise production will benefit from continuous learning feedback loops and training on site-specific organic traffic profiles.

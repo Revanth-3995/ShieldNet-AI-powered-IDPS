@@ -907,6 +907,11 @@
 </div>
 
 <div class="main">
+  <div id="mock-mode-banner" style="display:none;background:#ffd60022;border:1px solid #ffd600;
+    border-radius:6px;padding:10px 16px;color:#ffd600;font-size:13px">
+    ⚠ Steg analyzer running in <b>MOCK MODE</b> — CNN weights not loaded and/or Pillow not installed.
+    Detection results are synthetic. Run: <code>pip install Pillow</code> and see TRAINING_GUIDE.md.
+  </div>
 
 <!-- ══════════════ VIEW: OVERVIEW ══════════════ -->
 <div class="view active" id="view-overview">
@@ -1114,7 +1119,6 @@
               <div id="steg-confidence-progress" style="height:100%; width:0%; transition:width 0.5s ease; background:var(--accent-green)"></div>
             </div>
           </div>
-          
           <!-- Payload & Algorithm -->
           <div class="grid-2" style="background:var(--bg-3); border-radius:6px; padding:10px; margin-bottom:14px; gap:8px">
             <div>
@@ -1125,6 +1129,13 @@
               <div style="font-size:10px; color:var(--text-muted)">Dominant Alg Signature:</div>
               <div id="steg-result-algorithm" style="font-size:12px; font-weight:600; color:var(--accent-purple); margin-top:2px">—</div>
             </div>
+          </div>
+          
+          <!-- Extracted Message Section -->
+          <div id="steg-extraction-box" style="display:none; background:rgba(168,85,247,0.1); border:1px solid rgba(168,85,247,0.3); border-radius:6px; padding:10px; margin-bottom:14px">
+            <div style="font-size:10px; color:var(--text-secondary); font-weight:600">Extracted Hidden Message:</div>
+            <div id="steg-result-extracted-message" style="font-family:'JetBrains Mono', monospace; font-size:11px; color:var(--accent-cyan); margin-top:4px; word-break:break-all; background:var(--bg-0); padding:6px; border-radius:4px; border:1px solid var(--border)">—</div>
+            <div id="steg-result-extracted-method" style="font-size:9px; color:var(--text-muted); margin-top:4px">Method: lsb_sequential_all</div>
           </div>
           
           <!-- Algorithm Breakdown -->
@@ -1350,11 +1361,6 @@
 
 <!-- ══════════════ VIEW: CONTROL (Panel 9) ══════════════ -->
 <div class="view" id="view-control">
-  <div id="mock-mode-banner" style="display:none;background:#ffd60022;border:1px solid #ffd600;
-    border-radius:6px;padding:10px 16px;margin-bottom:16px;color:#ffd600;font-size:13px">
-    ⚠ Steg analyzer running in <b>MOCK MODE</b> — CNN weights not loaded and/or Pillow not installed.
-    Detection results are synthetic. Run: <code>pip install Pillow</code> and see TRAINING_GUIDE.md.
-  </div>
   <div class="grid-2">
     <div class="panel">
       <div class="panel-header">
@@ -2888,6 +2894,10 @@ async function loadVideoFrames(incidentId) {
   const payloadText = document.getElementById('steg-result-payload');
   const algorithmText = document.getElementById('steg-result-algorithm');
   const algoBars = document.getElementById('steg-algo-bars');
+  
+  const extractionBox = document.getElementById('steg-extraction-box');
+  const extractedMessage = document.getElementById('steg-result-extracted-message');
+  const extractedMethod = document.getElementById('steg-result-extracted-method');
 
   let selectedFile = null;
 
@@ -3032,6 +3042,14 @@ async function loadVideoFrames(incidentId) {
       }).join('');
     } else {
       algoBars.innerHTML = '<div style="font-size:10px; color:var(--text-muted)">Breakdown unavailable</div>';
+    }
+
+    if (data.extracted_message) {
+      extractedMessage.textContent = data.extracted_message;
+      extractedMethod.textContent = `Method: ${data.extraction_method || 'Unknown'} (${data.extraction_status || 'extracted'})`;
+      extractionBox.style.display = 'block';
+    } else {
+      extractionBox.style.display = 'none';
     }
 
     resultsContent.style.display = 'block';

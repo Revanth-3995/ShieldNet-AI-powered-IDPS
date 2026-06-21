@@ -114,7 +114,7 @@ def generate_dataset(
             if (i + 1) % 50 == 0:
                 print(f"    Generated {i + 1}/{n_steg} steg images")
     
-    print(f"\n[✓] Dataset generation complete!")
+    print(f"\n[SUCCESS] Dataset generation complete!")
     print(f"    Clean images: {len(list(clean_dir.glob('*.png')))}")
     print(f"    Steg images: {len(list(steg_dir.glob('*.png')))}")
     print(f"    Output directory: {output_dir}")

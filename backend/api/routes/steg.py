@@ -209,6 +209,10 @@ async def upload_media(
             "payload_estimate_bytes": result.get("payload_estimate", 0),
             "incident_created": incident_created,
             "incident_id": incident_id,
+            "mock": result.get("mock", False),
+            "extracted_message": result.get("extracted_message"),
+            "extraction_status": result.get("extraction_status", "not_attempted"),
+            "extraction_method": result.get("extraction_method"),
             "scores": {
                 k: v for k, v in result.items()
                 if k in _ALGO_SCORE_KEYS and isinstance(v, (int, float))
@@ -478,6 +482,7 @@ def get_quarantine(db: Session = Depends(get_db)):
 def steg_health():
     """Returns mock mode status and CNN load status for Panel 9 warning."""
     from backend.services.steg.cnn.cnn_classifier import _MODEL_LOADED
+    from backend.services.steg.analyzer import MOCK_MODE
     try:
         from backend.services.steg.algorithms import (
             chi_square_analysis, rs_analysis, sample_pair_analysis
@@ -493,13 +498,12 @@ def steg_health():
         pil_available = True
     except ImportError:
         pil_available = False
-    mock_mode = not pil_available
     return {
-        "mock_mode": mock_mode,
+        "mock_mode": MOCK_MODE,
         "cnn_loaded": _MODEL_LOADED,
         "algorithms_available": algorithms_available,
         "pil_available": pil_available,
-        "warning": "Running in MOCK MODE — install Pillow for real analysis" if mock_mode else None,
+        "warning": "Running in MOCK MODE — install Pillow for real analysis" if MOCK_MODE else None,
     }
 
 

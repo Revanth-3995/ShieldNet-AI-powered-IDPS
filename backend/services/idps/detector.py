@@ -40,7 +40,7 @@ class IDPSEngine:
     def __init__(self):
         self.xgboost = XGBoostDetector(model_path=str(settings.ai.IDPS_MODEL_PATH))
         self.rule_engine = RuleEngine()
-        self.sequence_detector = BiLSTMDetector()
+        self.sequence_detector = BiLSTMDetector(model_path=str(settings.ai.BILSTM_MODEL_PATH))
         self.fusion_engine = FusionEngine()
         self.explainability = ExplainabilityEngine(model=self.xgboost)
         self.response_manager = ResponseManager(db_session_factory=SessionLocal)

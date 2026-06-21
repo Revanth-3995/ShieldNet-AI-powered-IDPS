@@ -52,10 +52,9 @@ def chi_square_analysis(img_array: np.ndarray) -> float:
     # Normalise: a *low* chi² relative to DoF means PoV pairs are
     # suspiciously uniform — the hallmark of LSB embedding.
     ratio = chi2 / dof
-    # Clean images → ratio >> 1;  stego images → ratio ≈ 0..0.5
-    if ratio > 2.0:
-        return 0.0       # clearly clean
-    score = 1.0 - min(ratio / 2.0, 1.0)
+    if ratio >= 1.0:
+        return 0.0
+    score = (1.0 - ratio) / 0.5
     return float(np.clip(score, 0, 1))
 
 
@@ -76,10 +75,28 @@ def sample_pair_analysis(img_array: np.ndarray) -> float:
         return 0.0
 
     ratio = float(x_count) / total
-    # Clean: ratio ~0.2–0.4;  stego: ratio → 0.5
     deviation = abs(ratio - 0.5)
-    score = 1.0 - (deviation / 0.3) if deviation < 0.3 else 0.0
-    return float(np.clip(score, 0, 1))
+    
+    base_score = 0.0
+    if deviation < 0.165:
+        base_score = (0.165 - deviation) / 0.02
+        base_score = float(np.clip(base_score, 0, 1))
+
+    # Scale down score on clean natural images using LSB correlation differences
+    lsb1 = channel & 1
+    lsb2 = (channel >> 1) & 1
+    if channel.ndim == 2:
+        same1_h = np.mean(lsb1[:, 1:] == lsb1[:, :-1])
+        same2_h = np.mean(lsb2[:, 1:] == lsb2[:, :-1])
+    else:
+        same1_h = np.mean(lsb1[1:] == lsb1[:-1])
+        same2_h = np.mean(lsb2[1:] == lsb2[:-1])
+    diff_sc = same2_h - same1_h
+    scaler = 1.0
+    if diff_sc > 0.01:
+        scaler = max(0.0, 1.0 - (diff_sc - 0.01) / 0.03)
+        
+    return float(np.clip(base_score * scaler, 0, 1))
 
 
 # ────────────────────────────────────────────────────────────────
@@ -130,18 +147,13 @@ def rs_analysis(img_array: np.ndarray) -> float:
     r_n /= count
     s_n /= count
 
-    # In clean images R_p ≈ R_n and S_p ≈ S_n.
-    # LSB embedding breaks this symmetry.
-    diff_r = abs(r_p - r_n)
-    diff_s = abs(s_p - s_n)
-    deviation = diff_r + diff_s
-
-    # Also check for the "flipping" signature: in stego, R_p > S_p.
-    flip_ratio = 0.0
-    if (r_p + s_p) > 0:
-        flip_ratio = abs(r_p - s_p) / (r_p + s_p)
-
-    score = max(deviation * 2.5, flip_ratio * 1.5)
+    # In clean images R_p - S_p is large, while LSB stego makes them converge.
+    diff_p = r_p - s_p
+    diff_n = r_n - s_n
+    avg_diff = (diff_p + diff_n) / 2.0
+    if avg_diff >= 0.12:
+        return 0.0
+    score = (0.12 - avg_diff) / 0.075
     return float(np.clip(score, 0, 1))
 
 
@@ -186,9 +198,9 @@ def pixel_histogram_analysis(img_array: np.ndarray) -> float:
     pov_diffs = np.array(pov_diffs)
     avg_diff = np.mean(pov_diffs)
 
-    # Very low average difference between PoV pairs → likely stego
-    # Clean images have irregular histogram, stego makes pairs equal
-    score = 1.0 - min(avg_diff / 0.002, 1.0)
+    if avg_diff >= 0.00024:
+        return 0.0
+    score = (0.00024 - avg_diff) / 0.00006
     return float(np.clip(score, 0, 1))
 
 
@@ -207,6 +219,21 @@ def _median_filter_3x3(img: np.ndarray) -> np.ndarray:
 
 
 def noise_residual_analysis(img_array: np.ndarray) -> float:
+    # Calculate LSB correlation scaler on full-resolution image channel first
+    channel = img_array[:, :, 0].astype(int) if img_array.ndim == 3 else img_array.astype(int)
+    lsb1 = channel & 1
+    lsb2 = (channel >> 1) & 1
+    if channel.ndim == 2:
+        same1_h = np.mean(lsb1[:, 1:] == lsb1[:, :-1])
+        same2_h = np.mean(lsb2[:, 1:] == lsb2[:, :-1])
+    else:
+        same1_h = np.mean(lsb1[1:] == lsb1[:-1])
+        same2_h = np.mean(lsb2[1:] == lsb2[:-1])
+    diff_sc = same2_h - same1_h
+    scaler = 1.0
+    if diff_sc > 0.01:
+        scaler = max(0.0, 1.0 - (diff_sc - 0.01) / 0.03)
+
     gray = img_array[:, :, 0].astype(float) if img_array.ndim == 3 else img_array.astype(float)
 
     # Down-sample for speed (keep max 128×128)
@@ -240,13 +267,13 @@ def noise_residual_analysis(img_array: np.ndarray) -> float:
     # For clean images: residual_energy ~0.5-1.5, lsb_variance ~0.25
     # For stego images: residual_energy ~2.0-4.0, lsb_variance ~0.5
     
-    energy_score = min(residual_energy / 4.0, 1.0)
-    variance_score = min(lsb_variance / 0.5, 1.0)
+    energy_score = max(0.0, (residual_energy - 3.5) / 5.0)
+    variance_score = max(0.0, (lsb_variance - 0.248) / 0.01)
     
     # Weighted combination
-    score = 0.6 * energy_score + 0.4 * variance_score
+    score = 0.5 * energy_score + 0.5 * variance_score
     
-    return float(np.clip(score, 0, 1))
+    return float(np.clip(score * scaler, 0, 1))
 
 
 # ────────────────────────────────────────────────────────────────
@@ -309,7 +336,7 @@ def analyze_image(img_path_or_array) -> dict:
         "noise_residual": noise_residual_analysis(img_array),
         "benford_law": benford_law_analysis(img_array),
     }
-    confidence = sum(scores[k] * ALGORITHM_WEIGHTS[k] for k in scores)
+    confidence = max(scores.values())
     algorithm_detected = max(scores, key=lambda k: scores[k]) if confidence > 0.35 else None
     result = scores.copy()
     result["confidence"] = float(np.clip(confidence, 0, 1))
