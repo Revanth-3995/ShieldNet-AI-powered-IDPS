@@ -575,3 +575,216 @@ For questions, issues, or contributions, please open an issue on GitHub or conta
 This is a research-grade cybersecurity platform. While it demonstrates advanced detection capabilities, it should be used for educational and research purposes only. For production deployments, additional security hardening and testing are recommended.
 
 See `status_report.md` for current development status and roadmap.
+
+---
+
+## Pipeline B — Automated Steganographic Covert Channel Detection
+
+Pipeline B converts the trained EfficientNet-B0 steganalysis model into a fully automated real-time detection pipeline. It intercepts image uploads via mitmproxy, analyzes them using the existing CNN + statistical algorithms, and automatically quarantines malicious files, alerts the backend, and generates forensic reports — **with zero manual intervention**.
+
+### Architecture
+
+```
+Attacker
+   ↓
+Uploads Image (HTTP/HTTPS)
+   ↓
+mitmproxy Intercepts Request
+   ↓
+Extract Uploaded Image → pipeline_b/uploads/
+   ↓
+predict_image(filepath)          [detector.py]
+  ├── Statistical Algorithms (7x)
+  └── EfficientNet-B0 CNN (fused)
+   ↓
+evaluate_result(confidence)      [detector.py]
+   ↓
+Decision Engine
+  ├── 0.00–0.40 → clean     → allow
+  ├── 0.40–0.70 → suspicious → review + log
+  ├── 0.70–0.85 → likely     → block + backend event
+  └── 0.85–1.00 → critical   → quarantine + block + backend event
+   ↓
+Backend Alert API (POST /api/steg/event)    [backend_client.py]
+   ↓
+Dashboard Event (WebSocket broadcast)
+   ↓
+Forensic Report → pipeline_b/logs/forensics/  [forensics.py]
+```
+
+### Pipeline B File Structure
+
+```
+pipeline_b/
+├── __init__.py
+├── mitmproxy_addon.py      ← mitmproxy entry point (addons = [...])
+├── detector.py             ← predict_image(), evaluate_result()
+├── quarantine_manager.py   ← file quarantine + detections.json
+├── backend_client.py       ← async POST /api/steg/event (httpx, retry)
+├── forensics.py            ← forensic JSON report generator
+├── quarantine/             ← quarantined files (auto-created, dated subdirs)
+├── uploads/                ← temporary upload store (auto-cleaned)
+└── logs/
+    ├── detections.json     ← all detection records (JSON array, appended)
+    ├── pipeline_b.log      ← operational log
+    └── forensics/          ← per-file forensic JSON reports
+```
+
+### Running the mitmproxy Addon
+
+**Step 1 — Start the ShieldNet backend:**
+```bash
+uvicorn backend.main:app --reload --port 8000
+```
+
+**Step 2 — Start the mitmproxy transparent proxy:**
+```bash
+# HTTP interception (port 8080):
+mitmdump -s pipeline_b/mitmproxy_addon.py --listen-port 8080
+
+# With SSL/HTTPS interception:
+mitmdump -s pipeline_b/mitmproxy_addon.py --listen-port 8080 --ssl-insecure
+
+# With verbose output:
+mitmdump -s pipeline_b/mitmproxy_addon.py --listen-port 8080 -v
+```
+
+**Step 3 — Send an image upload through the proxy:**
+```bash
+# Direct image upload:
+curl -x http://127.0.0.1:8080 \
+     -H "Content-Type: image/png" \
+     --data-binary @stego_output.png \
+     http://any-target.example/upload
+
+# Multipart form upload:
+curl -x http://127.0.0.1:8080 \
+     -F "file=@stego_output.png" \
+     http://any-target.example/upload
+```
+
+**Expected Output (steganographic image):**
+```
+[Addon] Image saved: pipeline_b/uploads/abc123_stego_output.png (136319 bytes)
+[Detector] Analyzing: ...stego_output.png (image/png, 136319 bytes)
+[Detector] Result: prediction=steg, confidence=0.934, method=efficientnet_b0_fused
+[Addon] stego_output.png | 192.168.1.100 | confidence=0.934 | severity=critical | action=quarantine
+[Quarantine] QUARANTINED: stego_output.png → pipeline_b/quarantine/2026-06-21/stego_output_93pct.png
+[Forensics] Report saved: pipeline_b/logs/forensics/20260621T150042Z_stego_output_a1b2c3d4.json
+[Addon] REQUEST BLOCKED: stego_output.png | severity=critical | confidence=0.934
+```
+
+The attacker receives a **HTTP 403** with:
+```json
+{
+  "error": "ShieldNet: Steganographic content detected and blocked.",
+  "filename": "stego_output.png",
+  "confidence": 0.934,
+  "severity": "critical",
+  "action": "quarantine",
+  "pipeline": "B"
+}
+```
+
+### Using the detector.py API Directly
+
+```python
+from pipeline_b.detector import predict_image, evaluate_result
+
+# Analyze an image file
+result = predict_image("path/to/image.png")
+print(result)
+# {
+#   "prediction":  "steg",
+#   "confidence":  0.934,
+#   "algorithm_detected": "chi_square",
+#   "method":      "efficientnet_b0_fused",
+#   "payload_estimate": 17040,
+#   "scores": {"chi_square": 0.91, "rs_analysis": 0.87, ...},
+#   "file_size":   136319,
+#   "mime_type":   "image/png"
+# }
+
+# Map confidence to action
+decision = evaluate_result(result["confidence"])
+print(decision)
+# {
+#   "severity":  "critical",
+#   "action":    "quarantine",
+#   "message":   "CONFIRMED steganographic covert channel. ...",
+#   "confidence": 0.934
+# }
+```
+
+### Decision Threshold Reference
+
+| Confidence Range | Severity     | Action      | Effect                                 |
+|-----------------|-------------|------------|----------------------------------------|
+| 0.00 – 0.40     | `clean`      | `allow`     | Request passes through, no alert       |
+| 0.40 – 0.70     | `suspicious` | `review`    | Logged + backend event sent            |
+| 0.70 – 0.85     | `likely`     | `block`     | HTTP 403 returned + backend event      |
+| 0.85 – 1.00     | `critical`   | `quarantine`| HTTP 403 + file quarantined + backend  |
+
+### Running the Test Suite
+
+```bash
+# Run all Pipeline B tests:
+python -m pytest tests/pipeline_b/test_pipeline_b.py -v
+
+# Run with short tracebacks:
+python -m pytest tests/pipeline_b/test_pipeline_b.py -v --tb=short
+
+# Run a specific test class:
+python -m pytest tests/pipeline_b/test_pipeline_b.py::TestCleanImageDetection -v
+python -m pytest tests/pipeline_b/test_pipeline_b.py::TestStegImageDetection -v
+python -m pytest tests/pipeline_b/test_pipeline_b.py::TestMultipleImageBatch -v
+```
+
+**Test Coverage:**
+
+| Test | Description | Expected Result |
+|------|-------------|----------------|
+| Test 1 — Clean Image | Natural image with no hidden data | `prediction=clean`, `action=allow` |
+| Test 2 — Steg Image | Heavy LSB embedding (80% fill) | `prediction=steg`, quarantine created, forensic report generated |
+| Test 3 — Batch (5 images) | 3 clean + 2 steg | All analyzed, no crashes, no missed detections |
+
+### Configuration
+
+Pipeline B reads configuration from the environment:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `API_BASE_URL` | `http://127.0.0.1:8000` | ShieldNet backend base URL |
+| `STEG_SUSPICIOUS_THRESHOLD` | `0.40` | Minimum confidence for suspicious |
+| `STEG_LIKELY_THRESHOLD` | `0.70` | Minimum confidence for likely |
+| `STEG_CRITICAL_THRESHOLD` | `0.85` | Minimum confidence for critical |
+
+### Forensic Report Schema
+
+Each analyzed file produces a forensic report in `pipeline_b/logs/forensics/`:
+
+```json
+{
+  "report_id":          "a1b2c3d4e5f67890",
+  "filename":           "stego_output.png",
+  "prediction":         "steg",
+  "confidence":         0.934,
+  "severity":           "critical",
+  "file_size":          136319,
+  "mime_type":          "image/png",
+  "source_ip":          "192.168.1.100",
+  "timestamp":          "2026-06-21T15:00:42+00:00",
+  "recommended_action": "IMMEDIATE ACTION REQUIRED. Block source IP at firewall level...",
+  "algorithm_detected": "chi_square",
+  "payload_estimate":   17040,
+  "algorithm_scores":   {"chi_square": 0.91, "rs_analysis": 0.87, ...},
+  "method":             "efficientnet_b0_fused",
+  "cnn_score":          0.9521,
+  "stat_score":         0.91,
+  "extracted_message":  null,
+  "extraction_status":  "binary_payload_detected",
+  "pipeline":           "B",
+  "report_path":        "pipeline_b/logs/forensics/20260621T150042Z_stego_output_a1b2c3d4.json"
+}
+```
+
