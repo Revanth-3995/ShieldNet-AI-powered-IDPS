@@ -86,24 +86,30 @@ def extract_lsb_message(img_array: np.ndarray, max_bytes: int = 4096) -> dict:
     try:
         flat = img_array.flatten()
         max_bits = min(len(flat), max_bytes * 8)
-        bits = []
-        for i in range(max_bits):
-            bits.append(str(flat[i] & 1))
 
-        # Convert bits to bytes
-        byte_list = []
-        null_count = 0
-        for i in range(0, len(bits) - 7, 8):
-            byte_val = int("".join(bits[i:i + 8]), 2)
-            if byte_val == 0:
-                null_count += 1
-                if null_count >= 3:
-                    break
-            else:
-                null_count = 0
-            byte_list.append(byte_val)
+        # Optimize performance: Vectorize LSB extraction and packing
+        # Previously used a slow bit-by-bit Python loop that caused bottlenecks.
+        # Now using fast numpy bitwise operations and packbits, expecting massive speedups.
 
-        if not byte_list:
+        # Extract the LSB bits
+        lsb_bits = flat[:max_bits] & 1
+
+        # Pack bits into bytes (requires arrays multiple of 8)
+        valid_bits = len(lsb_bits) - (len(lsb_bits) % 8)
+        byte_vals = np.packbits(lsb_bits[:valid_bits])
+
+        # Vectorized search for 3 consecutive null bytes
+        zero_indices = np.where(byte_vals == 0)[0]
+        if len(zero_indices) >= 3:
+            diffs = np.diff(zero_indices)
+            # Find where we have two consecutive differences of 1
+            run_starts = np.where((diffs[:-1] == 1) & (diffs[1:] == 1))[0]
+            if len(run_starts) > 0:
+                # Get the index of the first null byte in the sequence
+                end_idx = zero_indices[run_starts[0]]
+                byte_vals = byte_vals[:end_idx]
+
+        if len(byte_vals) == 0:
             return {
                 "extracted_message": None,
                 "extraction_status": "no_message_found",
@@ -111,7 +117,7 @@ def extract_lsb_message(img_array: np.ndarray, max_bytes: int = 4096) -> dict:
             }
 
         # Try to decode as UTF-8 text
-        raw = bytes(byte_list)
+        raw = byte_vals.tobytes()
         try:
             message = raw.decode("utf-8").rstrip("\x00")
             # Check if it looks like readable text (>70% printable)
