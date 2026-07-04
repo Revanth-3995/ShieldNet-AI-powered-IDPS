@@ -13,7 +13,7 @@ import torch
 from .model_arch import BiLSTMIDS
 
 class BiLSTMDetector:
-    def __init__(self, sequence_length: int = 10, feature_dim: int = 35, model_path: str = None):
+    def __init__(self, sequence_length: int = 10, feature_dim: int = 44, model_path: str = None):
         self.sequence_length = sequence_length
         self.feature_dim = feature_dim
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -28,6 +28,7 @@ class BiLSTMDetector:
             checkpoint = torch.load(path, map_location=self.device)
             self.classes = checkpoint.get("classes", [])
             input_dim = checkpoint.get("input_dim", self.feature_dim)
+            self.feature_dim = input_dim
             num_classes = len(self.classes)
             
             self.model = BiLSTMIDS(input_dim=input_dim, hidden_dim=128, num_layers=2, num_classes=num_classes)

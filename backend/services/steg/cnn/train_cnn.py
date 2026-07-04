@@ -11,7 +11,7 @@ from pathlib import Path
 
 DATA_DIR = Path("data/steg_dataset")
 MODEL_OUT = Path("models/steg_cnn.pth")
-EPOCHS = 10
+EPOCHS = 5
 LR = 1e-4
 WEIGHT_DECAY = 1e-5
 MIXUP_ALPHA = 0.4
@@ -115,8 +115,8 @@ def train_or_load_model():
     dataset = StegDataset(transform)
     split = int(0.8 * len(dataset))
     train_ds, val_ds = torch.utils.data.random_split(dataset, [split, len(dataset) - split])
-    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True, num_workers=2)
-    val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE, num_workers=2)
+    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
+    val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE, num_workers=0)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[*] Training on {device}")
@@ -163,7 +163,7 @@ def train_or_load_model():
             torch.save(model.state_dict(), MODEL_OUT)
             print(f"  [*] Saved best model (val_acc={val_acc:.3f})")
 
-    print(f"\n[✓] Training complete. Best val_acc={best_val_acc:.3f}. Model saved to {MODEL_OUT}")
+    print(f"\n[SUCCESS] Training complete. Best val_acc={best_val_acc:.3f}. Model saved to {MODEL_OUT}")
     return True
 
 

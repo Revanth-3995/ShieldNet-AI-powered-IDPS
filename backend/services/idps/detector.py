@@ -18,7 +18,7 @@ from backend.services.response.alert_bus import alert_bus, TOPIC_IDPS_DETECTION
 # Modular Imports
 from .capture.flow_generator import Flow
 from .capture.traffic_stream import TrafficStream
-from .features.feature_schema import FeatureExtractor
+from .features.flow_features import FeatureExtractor
 from .models.classical_ml.xgboost_detector import XGBoostDetector
 from .models.sequence_models.bilstm_detector import BiLSTMDetector
 from .detection.rule_engine import RuleEngine
@@ -40,7 +40,7 @@ class IDPSEngine:
     def __init__(self):
         self.xgboost = XGBoostDetector(model_path=str(settings.ai.IDPS_MODEL_PATH))
         self.rule_engine = RuleEngine()
-        self.sequence_detector = BiLSTMDetector()
+        self.sequence_detector = BiLSTMDetector(model_path=str(settings.ai.BILSTM_MODEL_PATH))
         self.fusion_engine = FusionEngine()
         self.explainability = ExplainabilityEngine(model=self.xgboost)
         self.response_manager = ResponseManager(db_session_factory=SessionLocal)

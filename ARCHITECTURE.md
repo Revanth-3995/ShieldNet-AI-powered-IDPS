@@ -1,106 +1,269 @@
-# ShieldNet Backend Architecture
+# ShieldNet — System Architecture
+
+This document describes the high-level architecture, module relationships, and data flows of the ShieldNet AI-Powered Intrusion Detection & Prevention System.
 
 ---
 
-## Design Principles
+## 1. High-Level Architecture
 
-1. **Separation of Concerns** — API, logic, and data layers are strictly separated. Routes never touch the database directly; services never write HTTP responses.
-2. **Domain-Driven Design** — Logic is organized into self-contained domains (IDPS, Steg, Honeypot, Correlation). Each domain owns its models, repositories, and service layer.
-3. **Async-First** — All I/O is async. CPU-bound work is offloaded to a thread pool so the event loop is never blocked.
-4. **Pluggable AI** — New models (new architectures, new datasets) slot in by implementing the `BaseModel` interface in `models/inference/base_model.py`.
+ShieldNet is composed of two primary detection pipelines (Pipeline A and Pipeline B), a shared FastAPI backend, a real-time alerting bus, and a live monitoring dashboard. 
 
----
+```mermaid
+graph TD
+    subgraph "External Entities"
+        A[Attacker / Client]
+    end
 
-## Component Responsibilities
+    subgraph "Pipeline A: Network IDPS"
+        Pcap[Traffic Capture]
+        Ext[Feature Extractor]
+        RE[Rule Engine]
+        XGB[XGBoost Classifier]
+        BiLSTM[BiLSTM Temporal]
+        Pcap --> Ext
+        Ext --> RE
+        Ext --> XGB
+        Ext --> BiLSTM
+    end
 
-### Core (`backend/core/`)
-- **Config** (`config.py`): Environment variable loading with Pydantic validation. Single source of truth for all settings.
-- **Logging** (`logging.py`): Structured logging with file and console handlers. Use `get_logger("shieldnet.<module>")` everywhere.
-- **Exceptions** (`exceptions.py`): Centralized exception hierarchy. FastAPI middleware converts domain exceptions to HTTP responses.
-- **Processing Queue** (`processing_queue.py`): Thread pool wrapper for CPU-bound tasks. Keeps the async event loop unblocked during ML inference.
+    subgraph "Pipeline B: Steganalysis"
+        Proxy[mitmproxy Addon]
+        Det[Detection Engine]
+        Quar[Quarantine Manager]
+        Forens[Forensic Reporter]
+        Proxy --> Det
+        Det --> Quar
+        Det --> Forens
+    end
 
-### Services (`backend/services/`)
-- **IDPS**: Traffic capture → feature extraction → 3-stage detection funnel → automated response.
-- **Steganalysis**: Statistical detection of hidden payloads in images and video.
-- **Honeypot**: Decoy service interaction logging with MITRE ATT&CK mapping.
-- **Correlation**: Cross-pipeline event linking to surface complex multi-stage campaigns.
+    subgraph "ShieldNet Backend"
+        API[FastAPI Router]
+        DB[(SQLite / DB)]
+        Corr[Correlation Engine]
+        Bus[Alert Bus pub/sub]
+        Resp[Automated Response]
+    end
 
-### API (`backend/api/`)
-- **Routes**: Domain-specific REST endpoints. Thin layer — validation only, delegates to services.
-- **WebSocket** (`ws_manager.py`): Manages live connections and broadcasts detection events to the dashboard.
-- **Router** (`router.py`): Assembles all sub-routers into the main FastAPI app.
+    subgraph "Frontend"
+        Dash[Live Dashboard]
+    end
 
-### Database (`backend/db/`)
-- **Models** (`models.py`): SQLAlchemy ORM definitions for all persisted entities.
-- **Repositories** (`repositories/`): CRUD abstraction layer. All DB access goes here — never in services or routes.
-- **Migrations** (`migrations/`): Alembic migration scripts for schema versioning.
+    A -- Uploads Image --> Proxy
+    A -- Network Traffic --> Pcap
 
----
-
-## IDPS Internal Architecture
-
-```
-Traffic In (Scapy / Proxy)
-        │
-        ▼
-┌───────────────────┐
-│   traffic_stream  │  Raw packet ingestion
-└────────┬──────────┘
-         │
-         ▼
-┌───────────────────┐
-│  flow_generator   │  Aggregates packets into 5-tuple bidirectional flows
-└────────┬──────────┘
-         │
-         ▼
-┌───────────────────┐
-│  feature_schema    │  Extracts 42+ features (entropy, IAT, volume, ratios)
-└────────┬──────────┘
-         │
-    ┌────┴─────────────────────────┐
-    ▼                              ▼
-┌──────────────┐         ┌──────────────────┐
-│  rule_engine │         │  attack_classifier│
-│ (fast path)  │         │  XGBoost + BiLSTM │
-└──────┬───────┘         └────────┬─────────┘
-       │                          │
-       └──────────┬───────────────┘
-                  ▼
-         ┌─────────────────┐
-         │  Fusion Engine  │  Consensus weighting
-         └────────┬────────┘
-                  ▼
-         ┌─────────────────┐
-         │response_manager │  Block / Quarantine / Watchlist
-         └────────┬────────┘
-                  ▼
-         ┌─────────────────┐
-         │   alert_bus     │  Pub/sub to WebSocket + DB
-         └─────────────────┘
+    RE --> API
+    XGB --> API
+    BiLSTM --> API
+    Proxy -- "POST /api/steg/event" --> API
+    
+    API --> DB
+    API --> Corr
+    API --> Bus
+    Corr --> Bus
+    Bus --> Resp
+    Bus -. "WebSocket" .-> Dash
+    Resp -- "Block IP" --> Proxy
 ```
 
 ---
 
-## Data Flow (End to End)
+## 2. Folder Structure
 
-1. **Ingest**: Traffic enters via the proxy (`attack_proxy.py`) or live capture (`traffic_stream.py`).
-2. **Fast Path**: `RuleEngine` checks for deterministic signatures (SQLi, SYN flood, PPS violations). High-confidence hits skip ML entirely.
-3. **Flow Build**: `FlowGenerator` aggregates packets by 5-tuple key. At trigger threshold, flows are passed to feature extraction.
-4. **Feature Extraction**: `FlowFeatures` computes 42+ statistical parameters per flow.
-5. **ML Inference**: `AttackClassifier` runs XGBoost (behavioral) and BiLSTM (temporal) and fuses scores.
-6. **Response**: `ResponseManager` applies block/quarantine/watchlist based on fused confidence and severity thresholds.
-7. **Persistence**: Repository saves the detection event to the database.
-8. **Notification**: `AlertBus` publishes the event to all internal subscribers.
-9. **Broadcast**: `WSManager` streams the event to the live dashboard in real time.
+The project is organized into modular directories based on functionality:
+
+```text
+ShieldNet-AI-powered-IDPS/
+├── backend/                      # Central FastAPI application
+│   ├── api/                      # REST endpoints and WebSocket routes
+│   │   └── routes/               # Modular routers (steg, idps, dashboard)
+│   ├── core/                     # App configuration, logging, exceptions
+│   ├── db/                       # SQLAlchemy models, sessions, and schemas
+│   └── services/                 # Business logic and coordination
+│       ├── correlation/          # Multi-pipeline incident linking
+│       ├── honeypot/             # Decoy services management
+│       ├── idps/                 # Pipeline A logic (ML, rules, capture)
+│       └── response/             # Automated IP blocking and Alert Bus
+├── pipeline_b/                   # Pipeline B (Steganalysis Interceptor)
+│   ├── detector.py               # ML and Statistical fusion algorithms
+│   ├── mitmproxy_addon.py        # Proxy interceptor logic
+│   ├── quarantine_manager.py     # Secure file isolation
+│   ├── backend_client.py         # Async backend communication
+│   ├── forensics.py              # Incident report generation
+│   ├── quarantine/               # Secure storage for detected files
+│   └── logs/                     # Operational logs and forensic JSONs
+├── tests/                        # Automated test suites
+│   ├── pipeline_b/               # Pytest suite for Steganalysis
+│   └── ...
+├── models/                       # Trained ML artifacts (XGBoost, CNN, BiLSTM)
+├── data/                         # Datasets (CICIDS2017, etc.)
+└── dashboard.html                # Single-page UI for real-time monitoring
+```
 
 ---
 
-## Async Model
+## 3. Pipeline B: Module Relationships
 
-ShieldNet uses a hybrid async/sync approach:
+Pipeline B is heavily modularized to decouple proxy interception from heavy ML inference and backend communication.
 
-- **FastAPI** handles all I/O asynchronously (routes, WebSocket, DB queries via async SQLAlchemy).
-- **CPU-bound tasks** (ML inference, feature extraction) run in a `ThreadPoolExecutor` managed by `ProcessingQueue`.
-- **Inter-service events** use the `AlertBus`, an internal async pub/sub that decouples detection from response and notification.
+```mermaid
+classDiagram
+    class mitmproxy_addon {
+        +request(flow)
+        -_extract_multipart_images()
+        -_apply_response()
+    }
+    class detector {
+        +predict_image(filepath)
+        +evaluate_result(confidence)
+    }
+    class quarantine_manager {
+        +quarantine_file(filepath, record)
+        +save_detection_record(record)
+    }
+    class forensics {
+        +generate_forensic_report(...)
+        +save_forensic_report(report)
+    }
+    class backend_client {
+        +send_steg_event(event)
+        +send_steg_event_sync(event)
+    }
 
-This design allows the system to handle high-frequency traffic without the event loop ever blocking on ML inference.
+    mitmproxy_addon --> detector : calls for analysis
+    mitmproxy_addon --> quarantine_manager : isolates on critical
+    mitmproxy_addon --> forensics : generates report
+    mitmproxy_addon --> backend_client : dispatches event
+```
+
+---
+
+## 4. Data Flow: Steganography Detection (Pipeline B)
+
+This sequence illustrates the end-to-end data flow when an attacker uploads a steganographic image.
+
+```mermaid
+sequenceDiagram
+    participant Attacker
+    participant Proxy as mitmproxy Addon
+    participant Det as Detection Engine
+    participant Quar as Quarantine Mgr
+    participant API as FastAPI Backend
+    participant Dash as Dashboard
+
+    Attacker->>Proxy: Upload image (POST)
+    Proxy->>Proxy: Intercept & Save temp file
+    Proxy->>Det: predict_image()
+    
+    rect rgb(40, 40, 50)
+        Note over Det: 7 Statistical Algorithms<br/>+ EfficientNet-B0
+    end
+    
+    Det-->>Proxy: Result (confidence: 0.93)
+    Proxy->>Det: evaluate_result(0.93)
+    Det-->>Proxy: Action: quarantine
+    
+    par Forensic & Isolation
+        Proxy->>Quar: quarantine_file()
+        Proxy->>Proxy: generate_forensic_report()
+    and Alert Generation
+        Proxy->>API: POST /api/steg/event
+        API->>API: DB Insert (StegScan, Incident)
+        API->>Dash: WebSocket Event
+    end
+    
+    Proxy-->>Attacker: HTTP 403 Forbidden
+```
+
+---
+
+## 5. Backend Communication & Correlation
+
+When events arrive at the backend (from either Pipeline A or B), they undergo correlation and broad distribution.
+
+```mermaid
+flowchart TD
+    E1[Pipeline A Event] --> API[FastAPI Entry Point]
+    E2[Pipeline B Event] --> API
+    
+    API --> DB[(SQLite Database)]
+    API --> Corr{Correlation Engine}
+    
+    Corr -- "Same IP / Time Window" --> CG[Correlation Group]
+    CG --> DB
+    
+    API --> Bus[Alert Bus]
+    CG --> Bus
+    
+    Bus --> WS[WebSocket Manager]
+    WS --> Client1[Dashboard Client 1]
+    WS --> Client2[Dashboard Client 2]
+    
+    Bus --> Block[Response Manager]
+    Block -- "Adds to" --> B_IP[(Blocked IPs Table)]
+```
+
+---
+
+## 6. Quarantine Workflow
+
+Files flagged as `critical` by the Steganalysis pipeline are immediately isolated.
+
+```mermaid
+stateDiagram-v2
+    [*] --> TempUpload: mitmproxy intercepts
+    TempUpload --> Analysis: predict_image()
+    
+    Analysis --> Clean: confidence < 0.40
+    Analysis --> Suspicious: confidence < 0.70
+    Analysis --> Likely: confidence < 0.85
+    Analysis --> Critical: confidence >= 0.85
+    
+    Clean --> Allow
+    Suspicious --> Allow
+    Likely --> Block
+    
+    Critical --> Quarantine
+    
+    state Quarantine {
+        CopyFile: Copy to pipeline_b/quarantine/YYYY-MM-DD/
+        GenReport: Generate Forensic JSON
+        SaveLog: Append to detections.json
+        
+        CopyFile --> GenReport
+        GenReport --> SaveLog
+    }
+    
+    Quarantine --> Block
+    Block --> [*]: Return HTTP 403
+    Allow --> [*]: Pass-through to destination
+```
+
+---
+
+## 7. Future Dashboard Integration
+
+The dashboard receives real-time WebSocket events and updates the UI dynamically. Future enhancements will integrate deep forensic reporting directly into the frontend.
+
+```mermaid
+graph LR
+    subgraph "Backend"
+        WS[WebSocket /api/ws/live]
+        API1[GET /api/steg/forensics/{id}]
+        API2[GET /api/steg/quarantine]
+    end
+
+    subgraph "Dashboard UI"
+        Feed[Live Incident Feed]
+        HM[Confidence Heatmap]
+        FQ[Forensics Modal / Viewer]
+        IP[Blocked IP Manager]
+    end
+
+    WS -. "JSON Alerts" .-> Feed
+    Feed --> HM
+    Feed -- "Click Event" --> FQ
+    FQ -- "Fetch details" --> API1
+    IP -- "Poll" --> API2
+```
+
+---

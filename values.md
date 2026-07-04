@@ -6,17 +6,17 @@ This document provides the definitive reference for the thresholds, rules, and A
 
 ## 1. Deterministic Rule Signatures (Heuristic Layer)
 
-These rules trigger **instant detection** based on deterministic patterns and specific thresholds.
+These rules trigger **instant detection** based on deterministic patterns and specific thresholds in `RuleEngine.check_packet()`. There are exactly 7 rules:
 
-| Rule / Attack Type | Trigger Condition | Confidence | MITRE TTP |
-| :--- | :--- | :--- | :--- |
-| **Port Scan (Vertical)** | > 30 unique ports in 60s | 0.95 | T1046 (Discovery) |
-| **SYN Flood** | > 200 SYN pkts without ACK | 0.90 | T1498 (DDoS) |
-| **Brute Force** | > 15 attempts to Auth ports | 0.92 | T1110 (Brute Force) |
-| **SQL Injection** | Match: `UNION`, `OR '1'='1'`, `--` | 0.88 | T1190 (Web Exploit) |
-| **DDoS (PPS)** | > 1,500 Packets Per Second | 0.98 | T1499 (Endpoint DoS) |
-| **Oversized Pkt** | Payload > 1500 bytes | 0.60 | T1005 (Data Probe) |
-| **Tiny Pkt** | Packet Header < 20 bytes | 0.55 | T1001 (Obfuscation) |
+| Exact Rule Name | Attack Type | Trigger Condition | Confidence | MITRE TTP |
+| :--- | :--- | :--- | :--- | :--- |
+| **Vertical Port Sweep detected** | PortScan | > 30 unique ports in 60s | 0.95 | T1046 (Discovery) |
+| **SYN Flood pattern recognized** | DoS | > 200 SYN pkts without ACK | 0.90 | T1498 (DDoS) |
+| **Excessive auth attempts to secure port** | BruteForce | > 15 attempts to Auth ports (22, 3389, 21, 23) | 0.92 | T1110 (Brute Force) |
+| **Extreme packet rate (PPS) violation** | DDoS | > 1,500 Packets Per Second | 0.98 | T1499 (Endpoint DoS) |
+| **SQL Injection signature matched** | WebAttack | Match signature in payload | 0.88 | T1190 (Web Exploit) |
+| **Oversized packet detected (Potential Jumbo Probe)** | AnomPkt | Packet size > 1500 bytes | 0.60 | T1005 (Data Probe) |
+| **Abnormally small packet header** | AnomPkt | Packet size < 20 bytes (and > 0) | 0.55 | T1001 (Obfuscation) |
 
 ---
 

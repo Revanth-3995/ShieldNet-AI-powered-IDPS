@@ -77,15 +77,105 @@ def _mock_image_analysis(seed: str = "") -> dict:
     }
 
 
+def extract_lsb_message(img_array: np.ndarray, max_bytes: int = 4096) -> dict:
+    """
+    Attempt to extract a hidden LSB message from an image.
+    Reads LSB bits sequentially until a null terminator (3 consecutive \\x00) is found.
+    Returns dict with extracted_message, extraction_status, extraction_method.
+    """
+    try:
+        flat = img_array.flatten()
+        max_bits = min(len(flat), max_bytes * 8)
+
+        # Optimize performance: Vectorize LSB extraction and packing
+        # Previously used a slow bit-by-bit Python loop that caused bottlenecks.
+        # Now using fast numpy bitwise operations and packbits, expecting massive speedups.
+
+        # Extract the LSB bits
+        lsb_bits = flat[:max_bits] & 1
+
+        # Pack bits into bytes (requires arrays multiple of 8)
+        valid_bits = len(lsb_bits) - (len(lsb_bits) % 8)
+        byte_vals = np.packbits(lsb_bits[:valid_bits])
+
+        # Vectorized search for 3 consecutive null bytes
+        zero_indices = np.where(byte_vals == 0)[0]
+        if len(zero_indices) >= 3:
+            diffs = np.diff(zero_indices)
+            # Find where we have two consecutive differences of 1
+            run_starts = np.where((diffs[:-1] == 1) & (diffs[1:] == 1))[0]
+            if len(run_starts) > 0:
+                # Get the index of the first null byte in the sequence
+                end_idx = zero_indices[run_starts[0]]
+                byte_vals = byte_vals[:end_idx]
+
+        if len(byte_vals) == 0:
+            return {
+                "extracted_message": None,
+                "extraction_status": "no_message_found",
+                "extraction_method": "lsb_sequential_all",
+            }
+
+        # Try to decode as UTF-8 text
+        raw = byte_vals.tobytes()
+        try:
+            message = raw.decode("utf-8").rstrip("\x00")
+            # Check if it looks like readable text (>70% printable)
+            printable_ratio = sum(1 for c in message if c.isprintable() or c in "\n\r\t") / max(len(message), 1)
+            if printable_ratio > 0.7 and len(message) >= 3:
+                return {
+                    "extracted_message": message,
+                    "extraction_status": "extracted",
+                    "extraction_method": "lsb_sequential_all",
+                }
+        except UnicodeDecodeError:
+            pass
+
+        return {
+            "extracted_message": None,
+            "extraction_status": "binary_payload_detected",
+            "extraction_method": "lsb_sequential_all",
+        }
+    except Exception as e:
+        logger.warning(f"LSB extraction error: {e}")
+        return {
+            "extracted_message": None,
+            "extraction_status": "extraction_failed",
+            "extraction_method": "lsb_sequential_all",
+        }
+
+
 def analyze_image_bytes(content: bytes, filename: str = "image") -> dict:
-    """Analyze image bytes using steg algorithms."""
+    """Analyze image bytes using steg algorithms and CNN classifier."""
     if STEG_ALG_AVAILABLE:
         try:
             from PIL import Image
             img = Image.open(io.BytesIO(content)).convert("RGB")
             img_array = np.array(img)
-            result = analyze_image(img_array)
-            result["payload_estimate"] = estimate_payload(img_array, result.get("confidence", 0))
+            stat_scores = analyze_image(img_array)
+            
+            # Fuse with CNN classifier
+            from backend.services.steg.cnn.cnn_classifier import classify_image
+            cnn_result = classify_image(img_array, stat_scores)
+            
+            result = stat_scores.copy()
+            result["confidence"] = cnn_result.get("confidence", stat_scores.get("confidence", 0.0))
+            result["algorithm_detected"] = cnn_result.get("algorithm_detected", stat_scores.get("algorithm_detected"))
+            result["method"] = cnn_result.get("method", "statistical_only")
+            result["payload_estimate"] = estimate_payload(img_array, result["confidence"])
+
+            # Always attempt LSB extraction to check for hidden text
+            extraction = extract_lsb_message(img_array)
+            result.update(extraction)
+            
+            # If a readable hidden message was successfully extracted, the image is 100% steganographic
+            if result.get("extracted_message") is not None:
+                result["confidence"] = 1.0
+                result["is_steganographic"] = True
+                result["algorithm_detected"] = "LSB-Spatial"
+                result["payload_estimate"] = len(result["extracted_message"])
+
+            result["mock"] = MOCK_MODE
             return result
         except Exception as e:
             logger.warning(f"Image analysis error: {e}")

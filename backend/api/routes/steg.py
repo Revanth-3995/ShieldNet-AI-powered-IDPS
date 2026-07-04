@@ -129,6 +129,124 @@ async def create_steg_event(payload: StegEventCreate, db: Session = Depends(get_
     return incident
 
 
+@router.post("/upload")
+async def upload_media(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    source_ip: str = "127.0.0.1",
+    db: Session = Depends(get_db)
+):
+    filename = file.filename or "upload"
+    content_type = file.content_type or ""
+    
+    # Save file contents to memory
+    content = await file.read()
+    file_size = len(content)
+    
+    # Check if image or video
+    is_image = content_type.startswith("image/") or filename.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"))
+    is_video = content_type.startswith("video/") or filename.lower().endswith((".mp4", ".avi", ".mkv", ".mov", ".webm"))
+    
+    if is_image:
+        from backend.services.steg.analyzer import analyze_image_bytes
+        try:
+            result = analyze_image_bytes(content, filename)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Image analysis failed: {str(e)}")
+            
+        confidence = result.get("confidence", 0.0)
+        is_steg = confidence >= 0.45  # Threshold adjusted based on algorithm testing
+        
+        # Numeric algorithm score keys only (for scores output)
+        _ALGO_SCORE_KEYS = {"chi_square", "sample_pair", "rs_analysis",
+                            "dct_histogram", "pixel_histogram", "noise_residual", "benford_law"}
+        
+        # Suspect threshold for database entry
+        suspicious_threshold = 0.40
+        incident_created = False
+        incident_id = None
+        
+        if confidence >= suspicious_threshold:
+            # Format forensic data (numeric keys only)
+            forensic_data = {
+                "algorithms": {
+                    k: v for k, v in result.items()
+                    if k in _ALGO_SCORE_KEYS
+                },
+                "analysis_timestamp": datetime.utcnow().isoformat(),
+            }
+            
+            # Create payload
+            event_payload = StegEventCreate(
+                source_ip=source_ip,
+                media_type="image",
+                confidence=confidence,
+                filename=filename,
+                file_size=file_size,
+                algorithm_detected=result.get("algorithm_detected"),
+                payload_estimate=result.get("payload_estimate", 0),
+                forensic_data=forensic_data,
+                frame_results=[],
+                audio_results=[]
+            )
+            
+            # Save incident
+            try:
+                incident = await create_steg_event(event_payload, db)
+                incident_created = True
+                incident_id = incident.id
+            except Exception as e:
+                logger.error(f"Failed to create steg incident: {e}")
+                
+        return {
+            "status": "completed",
+            "media_type": "image",
+            "filename": filename,
+            "file_size": file_size,
+            "confidence": confidence,
+            "is_steganographic": is_steg,
+            "algorithm_detected": result.get("algorithm_detected"),
+            "payload_estimate_bytes": result.get("payload_estimate", 0),
+            "incident_created": incident_created,
+            "incident_id": incident_id,
+            "mock": result.get("mock", False),
+            "extracted_message": result.get("extracted_message"),
+            "extraction_status": result.get("extraction_status", "not_attempted"),
+            "extraction_method": result.get("extraction_method"),
+            "scores": {
+                k: v for k, v in result.items()
+                if k in _ALGO_SCORE_KEYS and isinstance(v, (int, float))
+            }
+        }
+        
+    elif is_video:
+        # Save to temporary file
+        suffix = os.path.splitext(filename)[1]
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+            
+        logger.info(f"Received video upload via generic endpoint: {filename} ({tmp_path})")
+        
+        background_tasks.add_task(
+            process_video_task,
+            tmp_path,
+            filename,
+            source_ip
+        )
+        
+        return {
+            "status": "processing",
+            "media_type": "video",
+            "filename": filename,
+            "file_size": file_size,
+            "message": "Video analysis started in background"
+        }
+        
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported media type. Please upload an image or video.")
+
+
 @router.post("/upload/video")
 async def upload_video(
     background_tasks: BackgroundTasks,
@@ -364,6 +482,7 @@ def get_quarantine(db: Session = Depends(get_db)):
 def steg_health():
     """Returns mock mode status and CNN load status for Panel 9 warning."""
     from backend.services.steg.cnn.cnn_classifier import _MODEL_LOADED
+    from backend.services.steg.analyzer import MOCK_MODE
     try:
         from backend.services.steg.algorithms import (
             chi_square_analysis, rs_analysis, sample_pair_analysis
@@ -379,13 +498,12 @@ def steg_health():
         pil_available = True
     except ImportError:
         pil_available = False
-    mock_mode = not pil_available
     return {
-        "mock_mode": mock_mode,
+        "mock_mode": MOCK_MODE,
         "cnn_loaded": _MODEL_LOADED,
         "algorithms_available": algorithms_available,
         "pil_available": pil_available,
-        "warning": "Running in MOCK MODE — install Pillow for real analysis" if mock_mode else None,
+        "warning": "Running in MOCK MODE — install Pillow for real analysis" if MOCK_MODE else None,
     }
 
 

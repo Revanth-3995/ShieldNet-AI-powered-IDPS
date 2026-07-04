@@ -50,8 +50,16 @@ async def analyze_and_report(content: bytes, filename: str, content_type: str, s
             from io import BytesIO
             img = Image.open(BytesIO(content)).convert("RGB")
             img_array = np.array(img)
-            result = analyze_image(img_array)
-            result["payload_estimate"] = estimate_payload(img_array, result.get("confidence", 0))
+            stat_scores = analyze_image(img_array)
+            
+            from backend.services.steg.cnn.cnn_classifier import classify_image
+            cnn_result = classify_image(img_array, stat_scores)
+            
+            result = stat_scores.copy()
+            result["confidence"] = cnn_result.get("confidence", stat_scores.get("confidence", 0.0))
+            result["algorithm_detected"] = cnn_result.get("algorithm_detected", stat_scores.get("algorithm_detected"))
+            result["method"] = cnn_result.get("method", "statistical_only")
+            result["payload_estimate"] = estimate_payload(img_array, result["confidence"])
         except Exception as exc:
             logger.error(f"Image analysis failed: {exc}")
             result = {"confidence": 0.0}

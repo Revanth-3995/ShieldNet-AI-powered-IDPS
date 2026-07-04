@@ -52,3 +52,15 @@ logs/
 temp/
 quarantine/
 uploads/
+
+# Pipeline B Operational Directories
+pipeline_b/logs/
+pipeline_b/temp/
+pipeline_b/uploads/
+pipeline_b/quarantine/
+
+# Virtual Environments
+venv312/
+venv/
+env/
+

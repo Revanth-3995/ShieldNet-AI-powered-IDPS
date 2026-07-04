@@ -12,9 +12,11 @@ from typing import Optional
 
 import numpy as np
 
+from backend.core.config import settings
+
 logger = logging.getLogger("shieldnet.steg.cnn")
 
-_MODEL_PATH = Path("models/steg_cnn.pth")
+_MODEL_PATH = settings.ai.STEG_CNN_MODEL_PATH
 _model = None
 _transforms = None
 _MODEL_LOADED: bool = False
@@ -65,16 +67,21 @@ def _try_load_model() -> bool:
 
 
 def _statistical_fallback(statistical_scores: dict) -> dict:
-    """Average of all 7 algorithm scores when CNN is unavailable."""
-    if not statistical_scores:
+    """Maximum of all 7 algorithm scores when CNN is unavailable."""
+    # Filter to numeric scores only (exclude algorithm_detected, confidence, mock keys)
+    _NUMERIC_SCORE_KEYS = {"chi_square", "sample_pair", "rs_analysis",
+                           "dct_histogram", "pixel_histogram", "noise_residual", "benford_law"}
+    numeric = {k: v for k, v in statistical_scores.items()
+                if k in _NUMERIC_SCORE_KEYS and isinstance(v, (int, float))}
+    if not numeric:
         return {"confidence": 0.5, "is_steganographic": False,
                 "algorithm_detected": "statistical_only", "method": "fallback"}
-    vals = list(statistical_scores.values())
-    confidence = float(np.mean(vals))
-    top_algo = max(statistical_scores, key=statistical_scores.get)
+    vals = list(numeric.values())
+    confidence = float(np.max(vals))
+    top_algo = max(numeric, key=numeric.get)
     return {
         "confidence": round(confidence, 4),
-        "is_steganographic": confidence >= 0.70,
+        "is_steganographic": confidence >= 0.45,  # Threshold adjusted based on algorithm testing
         "algorithm_detected": top_algo,
         "method": "statistical_fallback",
     }
@@ -101,19 +108,27 @@ def _run_efficientnet(img_array: np.ndarray) -> float:
 
 
 def _mlp_fuse(cnn_score: float, stat_scores: dict) -> float:
-    """Simple late-fusion: weighted average of CNN score and top statistical score."""
+    """Late-fusion: maximum of CNN score and top statistical score to avoid dragging down high confidences."""
     if not stat_scores:
         return cnn_score
-    stat_mean = float(np.mean(list(stat_scores.values())))
-    # CNN gets 60% weight, statistical mean 40%
-    return 0.6 * cnn_score + 0.4 * stat_mean
+    _NUMERIC_SCORE_KEYS = {"chi_square", "sample_pair", "rs_analysis",
+                           "dct_histogram", "pixel_histogram", "noise_residual", "benford_law"}
+    numeric = {k: v for k, v in stat_scores.items()
+                if k in _NUMERIC_SCORE_KEYS and isinstance(v, (int, float))}
+    stat_top = float(np.max(list(numeric.values()))) if numeric else 0.0
+    
+    # Suppress CNN uncertainty if statistical models strongly indicate the image is clean
+    if stat_top < 0.15 and cnn_score < 0.70:
+        return stat_top
+        
+    return max(cnn_score, stat_top)
 
 
 def classify_image(img_array: np.ndarray, statistical_scores: dict) -> dict:
     """
     Classify a single image.
     Uses EfficientNet-B0 + MLP late-fusion if model is available,
-    otherwise returns statistical mean as fallback.
+    otherwise returns statistical max as fallback.
     """
     if not _try_load_model():
         return _statistical_fallback(statistical_scores)
@@ -121,15 +136,19 @@ def classify_image(img_array: np.ndarray, statistical_scores: dict) -> dict:
     try:
         cnn_score = _run_efficientnet(img_array)
         fused = _mlp_fuse(cnn_score, statistical_scores)
-        top_algo = (max(statistical_scores, key=statistical_scores.get)
-                    if statistical_scores else "cnn")
+        _NUMERIC_SCORE_KEYS = {"chi_square", "sample_pair", "rs_analysis",
+                               "dct_histogram", "pixel_histogram", "noise_residual", "benford_law"}
+        numeric = {k: v for k, v in statistical_scores.items()
+                    if k in _NUMERIC_SCORE_KEYS and isinstance(v, (int, float))}
+        stat_top = float(np.max(list(numeric.values()))) if numeric else 0.0
+        top_algo = max(numeric, key=numeric.get) if numeric else "cnn"
         return {
             "confidence": round(fused, 4),
-            "is_steganographic": fused >= 0.70,
+            "is_steganographic": fused >= 0.45,
             "algorithm_detected": top_algo,
             "method": "efficientnet_b0_fused",
             "cnn_score": round(cnn_score, 4),
-            "stat_score": round(float(np.mean(list(statistical_scores.values()))) if statistical_scores else 0.0, 4),
+            "stat_score": round(stat_top, 4),
         }
     except Exception as e:
         logger.warning(f"[CNN] classify_image error: {e}. Falling back.")
@@ -190,12 +209,16 @@ def classify_video_frames(
 
         cnn_score = _run_efficientnet(montage)
         fused = _mlp_fuse(cnn_score, statistical_scores)
-        top_algo = (max(statistical_scores, key=statistical_scores.get)
-                    if statistical_scores else "inter_frame_lsb")
+        _NUMERIC_SCORE_KEYS = {"chi_square", "sample_pair", "rs_analysis",
+                               "dct_histogram", "pixel_histogram", "noise_residual", "benford_law"}
+        numeric = {k: v for k, v in statistical_scores.items()
+                    if k in _NUMERIC_SCORE_KEYS and isinstance(v, (int, float))}
+        stat_top = float(np.max(list(numeric.values()))) if numeric else 0.0
+        top_algo = max(numeric, key=numeric.get) if numeric else "inter_frame_lsb"
 
         return {
             "confidence": round(fused, 4),
-            "is_steganographic": fused >= 0.70,
+            "is_steganographic": fused >= 0.45,
             "algorithm_detected": top_algo,
             "method": "efficientnet_b0_montage",
             "cnn_score": round(cnn_score, 4),

@@ -152,16 +152,15 @@ def post_idps(src_ip, attack_type, confidence, rule_triggered):
 
 def post_honeypot(src_ip, port, service, payload, credentials=None, mitre_ttp=""):
     try:
-        params = {
+        data = {
             "src_ip": src_ip,
             "port": port,
             "service": service,
             "payload": payload[:500],
             "mitre_ttp": mitre_ttp,
+            "credentials_attempted": credentials,
         }
-        if credentials:
-            params["credentials"] = credentials
-        r = requests.post(f"{API_BASE}/api/honeypot/log", params=params, timeout=5)
+        r = requests.post(f"{API_BASE}/api/honeypot/log", json=data, timeout=5)
         logger.info(f"  → Honeypot log: {service}:{port} from {src_ip} [{r.status_code}]")
     except Exception as e:
         logger.error(f"  → Honeypot post failed: {e}")

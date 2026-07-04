@@ -187,6 +187,8 @@ class SimulationSettings:
 class AISettings:
     MODELS_DIR: Path = ROOT_DIR / "models"
     IDPS_MODEL_PATH: Path = MODELS_DIR / "idps_model.pkl"
+    BILSTM_MODEL_PATH: Path = MODELS_DIR / "bilstm_ids.pth"
+    STEG_CNN_MODEL_PATH: Path = MODELS_DIR / "steg_cnn.pth"
     # Deep-learning slots (unused until Part 2 upgrade)
     CNN_STEG_MODEL_PATH: Path = MODELS_DIR / "cnn_steg.pt"
     XAI_ENABLED: bool = _env_bool("XAI_ENABLED", True)
