@@ -173,7 +173,21 @@ This will install:
 - SHAP (explainability)
 - And other required packages
 
-### 4. Initialize Database
+### 4. Configure Environment Variables
+
+ShieldNet uses environment variables for configuration. A template file `.env.example` is provided in the root directory.
+
+1. Copy the template to `.env`:
+   ```bash
+   # Linux/macOS
+   cp .env.example .env
+
+   # Windows (PowerShell)
+   Copy-Item .env.example .env
+   ```
+2. Open the `.env` file and customize the variables as needed (e.g., ports, secret keys, log levels, features).
+
+### 5. Initialize Database
 
 ```bash
 python -m backend.db.init_db
@@ -202,17 +216,23 @@ A pre-trained model is already included at `models/idps_model.pkl`.
 pip install -r requirements.txt
 ```
 
-### 2. Initialize database
+### 2. Configure environment
+```bash
+# Copy env template
+cp .env.example .env
+```
+
+### 3. Initialize database
 ```bash
 python -m backend.db.init_db
 ```
 
-### 3. Train the model (optional - pre-trained model included)
+### 4. Train the model (optional - pre-trained model included)
 ```bash
 python -m backend.services.idps.training.train_xgboost
 ```
 
-### 4. Run the backend
+### 5. Run the backend
 ```bash
 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
 ```
